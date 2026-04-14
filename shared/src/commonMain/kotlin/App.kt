@@ -1,41 +1,90 @@
+package com.myapplication.common
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material.Button
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import org.jetbrains.compose.resources.ExperimentalResourceApi
-import org.jetbrains.compose.resources.painterResource
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.myapplication.common.ImagePicker
+import com.myapplication.common.ImagePickerFactory
+import com.myapplication.common.PyTorchModel // Import PyTorchModel
+import com.myapplication.common.SharedViewModel // Import SharedViewModel
 
-@OptIn(ExperimentalResourceApi::class)
 @Composable
-fun App() {
+fun App(
+    pyTorchModel: PyTorchModel, // Pass PyTorchModel from platform-specific entry points
+    context: Any // Pass platform context
+) {
+    val viewModel = remember { SharedViewModel(pyTorchModel) }
+    val imagePicker = ImagePickerFactory().createPicker()
+
+    // Initialize the model
+    LaunchedEffect(Unit) {
+        // Need to ensure the model asset name matches what's used in optimize_model.py
+        pyTorchModel.loadModel("ai_detector_model_pytorch_script.ptl")
+    }
+
     MaterialTheme {
-        var greetingText by remember { mutableStateOf("Hello, World!") }
-        var showImage by remember { mutableStateOf(false) }
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Button(onClick = {
-                greetingText = "Hello, ${getPlatformName()}"
-                showImage = !showImage
-            }) {
-                Text(greetingText)
-            }
-            AnimatedVisibility(showImage) {
-                Image(
-                    painterResource("compose-multiplatform.xml"),
-                    contentDescription = "Compose Multiplatform icon"
-                )
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text("AI Image Detector", style = MaterialTheme.typography.h4)
+
+                Button(
+                    onClick = {
+                        imagePicker.pickImage { imageBytesList ->
+                            imageBytesList.firstOrNull()?.let {
+                                viewModel.analyzeImage(it)
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Pick Image from Gallery")
+                }
+
+                AnimatedVisibility(viewModel.isLoading) {
+                    CircularProgressIndicator()
+                }
+
+                viewModel.errorMessage?.let {
+                    Text(it, color = Color.Red)
+                }
+
+                viewModel.detectedImage?.let { imageBitmap ->
+                    Image(
+                        bitmap = imageBitmap,
+                        contentDescription = "Selected Image",
+                        modifier = Modifier.fillMaxWidth(0.8f).aspectRatio(imageBitmap.width.toFloat() / imageBitmap.height.toFloat()),
+                        contentScale = ContentScale.Fit
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+
+                    viewModel.detectionResult?.let { result ->
+                        val statusText = if (result.isAI) "Likely AI Generated" else "Likely Real"
+                        val statusColor = if (result.isAI) Color.Red else Color.Green
+                        Text(
+                            text = "Status: $statusText",
+                            color = statusColor,
+                            fontSize = 20.sp
+                        )
+                        Text(
+                            text = "Confidence: ${(result.confidence * 100).toInt()}%",
+                            fontSize = 18.sp
+                        )
+                    }
+                }
             }
         }
     }
 }
-
-expect fun getPlatformName(): String
