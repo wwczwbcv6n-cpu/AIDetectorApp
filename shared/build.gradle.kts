@@ -52,6 +52,9 @@ kotlin {
                 // Ktor Android engine
                 implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
 
+                // Security/Encryption
+                implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
                 // PyTorch Android (keeping existing dependency)
                 implementation("org.pytorch:pytorch_android:2.1.0")
                 implementation("org.pytorch:pytorch_android_torchvision:2.1.0")
