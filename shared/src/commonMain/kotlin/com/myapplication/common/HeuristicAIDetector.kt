@@ -10,7 +10,9 @@ data class HeuristicResult(
     val isAI: Boolean,
     val confidence: Float,
     val features: Map<String, Float>,
-    val processedImage: ImageBitmap?
+    val processedImage: ImageBitmap?,
+    val metadata: MetadataResult? = null,
+    val explanation: String = ""
 )
 
 /**
@@ -43,6 +45,11 @@ expect fun decodeImage(bytes: ByteArray, maxSide: Int = 256): DecodedImage
 class HeuristicAIDetector {
 
     fun analyze(imageData: ByteArray): HeuristicResult {
+        // 1. Metadata pass — cheap and decisive when a generator signature is
+        //    embedded. Don't decode pixels yet; this works on raw bytes.
+        val meta = MetadataAnalyzer.analyze(imageData)
+
+        // 2. Pixel-level heuristics on a 256-side preview.
         val img = decodeImage(imageData, maxSide = 256)
         val n = img.width * img.height
         val luma = FloatArray(n)
@@ -80,20 +87,48 @@ class HeuristicAIDetector {
             "horizontal_symmetry" to 0.08f,
             "histogram_irregularity" to 0.16f
         )
-        var score = 0f
+        var pixelScore = 0f
         var wSum = 0f
         for ((k, v) in features) {
             val w = weights[k] ?: 0f
-            score += w * v
+            pixelScore += w * v
             wSum += w
         }
-        val confidence = (score / wSum).coerceIn(0f, 1f)
+        pixelScore = (pixelScore / wSum).coerceIn(0f, 1f)
+        features["pixel_score"] = pixelScore
+        features["metadata_ai_score"] = meta.aiScore
+        features["metadata_camera_score"] = meta.cameraScore
+
+        // 3. Fusion. Generator signature dominates; camera signature anchors
+        //    the score below threshold. Otherwise pixel score with a small
+        //    metadata-derived prior.
+        val (confidence, explanation) = when {
+            meta.generatorMatch != null ->
+                0.85f to "AI generator signature detected: ${meta.generatorMatch}"
+            meta.cameraMatch != null ->
+                (pixelScore * 0.4f).coerceIn(0f, 0.30f) to
+                    "Camera metadata detected: ${meta.cameraMatch}"
+            else -> {
+                val blended = (pixelScore * 0.85f + meta.aiScore * 0.15f)
+                    .coerceIn(0f, 1f)
+                val why = buildString {
+                    append("No metadata signature; ")
+                    append("pixel score=${(pixelScore * 100).toInt()}%")
+                    if (meta.aiScore > 0f) {
+                        append(", format prior=${(meta.aiScore * 100).toInt()}%")
+                    }
+                }
+                blended to why
+            }
+        }
 
         return HeuristicResult(
-            isAI = confidence > 0.5f,
+            isAI = confidence >= 0.5f,
             confidence = confidence,
             features = features,
-            processedImage = img.composeImage
+            processedImage = img.composeImage,
+            metadata = meta,
+            explanation = explanation
         )
     }
 
