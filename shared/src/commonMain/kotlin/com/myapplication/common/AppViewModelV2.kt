@@ -58,6 +58,7 @@ class AppViewModelV2(
     var selectedHistoryEntry by mutableStateOf<AnalysisHistoryEntry?>(null)
 
     private val aiDetector = AIDetector(pyTorchModel)
+    private val heuristicDetector = HeuristicAIDetector()
     private var apiClient: ApiClient? = null
 
     init {
@@ -213,18 +214,18 @@ class AppViewModelV2(
         startTime: Long
     ) {
         try {
-            Logger.debug("Falling back to local model analysis")
-            val result = aiDetector.analyzeImage(imageData)
+            Logger.debug("Running on-device heuristic analysis")
+            val result = heuristicDetector.analyze(imageData)
             val processingTime = System.currentTimeMillis() - startTime
 
             analysisResult = AnalysisUIState(
                 isAI = result.isAI,
                 confidence = result.confidence,
                 processingTimeMs = processingTime,
-                processedImage = result.processedImage
+                processedImage = result.processedImage,
+                detailedFeatures = result.features
             )
 
-            // Save to history
             val entry = AnalysisHistoryEntry(
                 fileName = fileName.take(100),
                 fileSize = fileSize,
@@ -235,9 +236,9 @@ class AppViewModelV2(
             )
             historyRepository.addEntry(entry)
             loadHistory()
-            Logger.info("Local model analysis successful")
+            Logger.info("Heuristic analysis successful: confidence=${result.confidence}")
         } catch (e: Exception) {
-            Logger.error("Local model analysis failed", e)
+            Logger.error("Heuristic analysis failed", e)
             errorMessage = "Local analysis failed: ${e.message}"
         }
     }

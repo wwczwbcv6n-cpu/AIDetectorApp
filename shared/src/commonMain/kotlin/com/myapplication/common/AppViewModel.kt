@@ -38,6 +38,7 @@ class AppViewModel(
     var selectedHistoryEntry by mutableStateOf<AnalysisHistoryEntry?>(null)
 
     private val aiDetector = AIDetector(pyTorchModel)
+    private val heuristicDetector = HeuristicAIDetector()
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
     private var apiClient: ApiClient? = null
 
@@ -113,17 +114,17 @@ class AppViewModel(
     ) {
         try {
             val startTime = System.currentTimeMillis()
-            val result = aiDetector.analyzeImage(imageData)
+            val result = heuristicDetector.analyze(imageData)
             val processingTime = System.currentTimeMillis() - startTime
 
             analysisResult = AnalysisUIState(
                 isAI = result.isAI,
                 confidence = result.confidence,
                 processingTimeMs = processingTime,
-                processedImage = result.processedImage
+                processedImage = result.processedImage,
+                detailedFeatures = result.features
             )
 
-            // Save to history
             val entry = AnalysisHistoryEntry(
                 fileName = fileName,
                 fileSize = fileSize,

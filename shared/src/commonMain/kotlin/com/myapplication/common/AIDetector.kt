@@ -4,13 +4,10 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.Image
-import org.jetbrains.skia.impl.NativePointer
 import org.jetbrains.skia.IRect
 import org.jetbrains.skia.ImageInfo
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ColorType
-import org.jetbrains.skia.impl.toByteArray
-import kotlinx.cinterop.*
 import org.jetbrains.skia.Canvas
 
 data class DetectionResult(
