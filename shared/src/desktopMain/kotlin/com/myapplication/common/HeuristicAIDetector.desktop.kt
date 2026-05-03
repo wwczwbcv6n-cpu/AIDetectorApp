@@ -34,6 +34,6 @@ actual fun decodeImage(bytes: ByteArray, maxSide: Int): DecodedImage {
         pixels = pixels,
         width = w,
         height = h,
-        composeImage = bitmap.toComposeImageBitmap()
+        composeImage = Image.makeFromBitmap(bitmap).toComposeImageBitmap()
     )
 }

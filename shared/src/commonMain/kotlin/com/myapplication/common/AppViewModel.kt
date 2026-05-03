@@ -13,8 +13,10 @@ import com.myapplication.common.data.SettingsRepository
 import com.myapplication.common.data.HeatmapUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class AnalysisUIState(
     val isAI: Boolean = false,
@@ -38,9 +40,12 @@ class AppViewModel(
     var analysisHistory by mutableStateOf<List<AnalysisHistoryEntry>>(emptyList())
     var selectedHistoryEntry by mutableStateOf<AnalysisHistoryEntry?>(null)
 
-    private val aiDetector = AIDetector(pyTorchModel)
     private val heuristicDetector = HeuristicAIDetector()
-    private val coroutineScope = CoroutineScope(Dispatchers.Default)
+    // Compose's Snapshot system rejects mutableStateOf writes from background
+    // dispatchers when the state was created on Main. We launch on Main and
+    // shift any CPU-heavy block (heuristic analysis, repo IO) into
+    // withContext(Default).
+    private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var apiClient: ApiClient? = null
 
     init {
@@ -132,7 +137,9 @@ class AppViewModel(
     ) {
         try {
             val startTime = System.currentTimeMillis()
-            val result = heuristicDetector.analyze(imageData)
+            val result = withContext(Dispatchers.Default) {
+                heuristicDetector.analyze(imageData)
+            }
             val processingTime = System.currentTimeMillis() - startTime
 
             analysisResult = AnalysisUIState(

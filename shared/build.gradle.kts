@@ -38,9 +38,6 @@ kotlin {
 
                 // Kotlinx Serialization
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.6.3")
-
-                // PyTorch Lite (keeping existing dependency)
-                implementation("de.voize:pytorch-lite-multiplatform:0.7.0")
             }
         }
         val androidMain by getting {
@@ -71,11 +68,19 @@ kotlin {
             dependencies {
                 // Ktor iOS engine
                 implementation("io.ktor:ktor-client-darwin:$ktorVersion")
+                // PyTorch Lite — only iOS uses this; Android has its own
+                // org.pytorch:pytorch_android dep, desktop uses the heuristic
+                // path via the local stub (no native PyTorch on desktop).
+                implementation("de.voize:pytorch-lite-multiplatform:0.7.0")
             }
         }
         val desktopMain by getting {
             dependencies {
                 implementation(compose.desktop.common)
+                // Dispatchers.Main on JVM/Compose Desktop is backed by Swing.
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.7.3")
+                // Ktor JVM engine — Android has OkHttp, iOS has Darwin, desktop needs CIO.
+                implementation("io.ktor:ktor-client-cio:$ktorVersion")
             }
         }
     }

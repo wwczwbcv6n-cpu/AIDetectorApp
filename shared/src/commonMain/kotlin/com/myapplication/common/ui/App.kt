@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.*
@@ -83,11 +83,11 @@ fun App(
                             BottomNavigationItem(
                                 icon = {
                                     Icon(
-                                        imageVector = Icons.Default.History,
-                                        contentDescription = "History"
+                                        imageVector = Icons.Default.List,
+                                        contentDescription = "List"
                                     )
                                 },
-                                label = { Text("History") },
+                                label = { Text("List") },
                                 selected = currentScreen == Screen.HISTORY,
                                 onClick = { currentScreen = Screen.HISTORY }
                             )

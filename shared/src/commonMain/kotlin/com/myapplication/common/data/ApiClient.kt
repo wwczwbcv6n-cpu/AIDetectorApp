@@ -2,7 +2,9 @@ package com.myapplication.common.data
 
 import io.ktor.client.*
 import io.ktor.client.call.*
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.http.*
@@ -27,6 +29,7 @@ class ApiClient(private val settings: AppSettings) {
                 ignoreUnknownKeys = true
             })
         }
+        install(HttpTimeout)
     }
 
     suspend fun analyzeImage(imageData: ByteArray): Result<ApiAnalysisResult> {

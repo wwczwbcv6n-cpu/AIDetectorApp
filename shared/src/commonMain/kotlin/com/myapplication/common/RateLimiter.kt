@@ -2,7 +2,11 @@ package com.myapplication.common
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlin.system.getTimeMillis
+import kotlin.time.TimeSource
+
+private val timeSource = TimeSource.Monotonic
+private val timeOrigin = timeSource.markNow()
+private fun getTimeMillis(): Long = (timeSource.markNow() - timeOrigin).inWholeMilliseconds
 
 /**
  * Production-grade rate limiter for preventing spam and overload

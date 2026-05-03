@@ -29,7 +29,7 @@ class AIDetectorApi {
                         formData {
                             append("image", imageData, Headers.build {
                                 append(HttpHeaders.ContentType, "image/jpeg") // Assuming JPEG, adjust if needed
-                                append(HttpHeaders.ContentDisposition, "filename="image.jpg"")
+                                append(HttpHeaders.ContentDisposition, "filename=\"image.jpg\"")
                             })
                         }
                     )

@@ -11,7 +11,7 @@ fun main() = application {
         title = "AI Image Detector"
     ) {
         App(
-            pyTorchModel = PyTorchModel(),
+            pyTorchModel = PyTorchModel(Unit),
             settingsRepository = SettingsRepository(),
             historyRepository = AnalysisHistoryRepository(),
             context = Unit
