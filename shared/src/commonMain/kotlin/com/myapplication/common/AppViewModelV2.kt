@@ -392,6 +392,12 @@ class AppViewModelV2(
      */
     fun dispose() {
         Logger.debug("AppViewModelV2 disposing...")
+        try {
+            apiClient?.close()
+        } catch (e: Exception) {
+            Logger.warn("ApiClient.close() failed: ${e.message}")
+        }
+        apiClient = null
         job.cancel()
         Logger.info("AppViewModelV2 disposed")
     }

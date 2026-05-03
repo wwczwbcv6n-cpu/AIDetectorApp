@@ -29,6 +29,9 @@ fun App(
     val viewModel = remember {
         AppViewModel(pyTorchModel, settingsRepository, historyRepository)
     }
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.dispose() }
+    }
 
     var currentScreen by remember { mutableStateOf(Screen.ANALYSIS) }
 

@@ -6,7 +6,9 @@ import kotlin.system.measureTimeMillis
  * Production-grade logging infrastructure
  */
 object Logger {
-    var enabled = false
+    // On by default so production crashes/init failures actually surface in
+    // logcat / stdout. Toggle off via Logger.enabled = false from settings.
+    var enabled = true
     private const val TAG = "AIDetector"
 
     enum class Level { DEBUG, INFO, WARN, ERROR }

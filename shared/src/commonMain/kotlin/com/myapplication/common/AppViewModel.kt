@@ -13,6 +13,7 @@ import com.myapplication.common.data.SettingsRepository
 import com.myapplication.common.data.HeatmapUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 data class AnalysisUIState(
@@ -44,12 +45,29 @@ class AppViewModel(
 
     init {
         coroutineScope.launch {
-            // Load settings
-            settings = settingsRepository.getSettings()
-            apiClient = ApiClient(settings)
-            // Load history
-            loadHistory()
+            try {
+                settings = settingsRepository.getSettings()
+                apiClient = ApiClient(settings)
+                loadHistory()
+            } catch (e: Exception) {
+                Logger.error("AppViewModel initialization failed", e)
+                errorMessage = "Initialization failed: ${e.message}"
+            }
         }
+    }
+
+    /**
+     * Must be called when the host Activity/Composable is destroyed to release
+     * the API HttpClient and cancel in-flight coroutines.
+     */
+    fun dispose() {
+        try {
+            apiClient?.close()
+        } catch (e: Exception) {
+            Logger.warn("ApiClient.close() failed: ${e.message}")
+        }
+        apiClient = null
+        coroutineScope.cancel()
     }
 
     fun analyzeImage(imageData: ByteArray, fileName: String, fileSize: Long = 0L) {

@@ -10,7 +10,11 @@ actual fun decodeImage(bytes: ByteArray, maxSide: Int): DecodedImage {
     val scale = maxSide.toFloat() / max(raw.width, raw.height)
     val w = (raw.width * scale).toInt().coerceAtLeast(1)
     val h = (raw.height * scale).toInt().coerceAtLeast(1)
-    val scaled = if (scale < 1f) Bitmap.createScaledBitmap(raw, w, h, true) else raw
+    val scaled = if (scale < 1f) {
+        val s = Bitmap.createScaledBitmap(raw, w, h, true)
+        if (s !== raw) raw.recycle()
+        s
+    } else raw
     val pixels = IntArray(scaled.width * scaled.height)
     scaled.getPixels(pixels, 0, scaled.width, 0, 0, scaled.width, scaled.height)
     return DecodedImage(
