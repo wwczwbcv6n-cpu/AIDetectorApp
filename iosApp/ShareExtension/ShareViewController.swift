@@ -4,7 +4,25 @@ import shared // Import the shared KMM module
 
 class ShareViewController: UIViewController {
 
-    private let api = AIDetectorApi()
+    // The KMM constructor used to default to a hardcoded LAN IP. It now
+    // requires a baseUrl. We read both base URL and API key from the
+    // shared App Group UserDefaults that the main app writes to under
+    // the same suite. If the user hasn't configured the server yet we
+    // surface a clear error instead of firing a request to nowhere.
+    //
+    // App Group used by both the main app and this extension:
+    //   group.com.myapplication.shared
+    private static let appGroup = "group.com.myapplication.shared"
+    private static let urlKey = "apiBaseUrl"
+    private static let keyKey = "apiKey"
+
+    private lazy var api: AIDetectorApi? = {
+        let defaults = UserDefaults(suiteName: Self.appGroup)
+        guard let url = defaults?.string(forKey: Self.urlKey),
+              !url.isEmpty else { return nil }
+        let key = defaults?.string(forKey: Self.keyKey)
+        return AIDetectorApi(baseUrl: url, apiKey: key)
+    }()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -73,8 +91,18 @@ class ShareViewController: UIViewController {
                     
                     let kotlinByteArray = self.toKotlinByteArray(data: jpegData)
 
+                    // Refuse to fire if the user hasn't configured the
+                    // server in the main app yet — better than silently
+                    // hitting a hardcoded IP that won't reach them.
+                    guard let api = self.api else {
+                        self.showError(
+                            message: "Open the AI Detector app and set the API URL before sharing.",
+                            statusLabel: statusLabel)
+                        return
+                    }
+
                     // KMP suspend functions are exposed to Swift with completion handlers
-                    self.api.analyzeImage(imageData: kotlinByteArray) { result, error in
+                    api.analyzeImage(imageData: kotlinByteArray) { result, error in
                         DispatchQueue.main.async {
                             if let result = result {
                                 self.showResult(result, statusLabel: statusLabel)

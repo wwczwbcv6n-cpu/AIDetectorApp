@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network security policy for AI Detector (release-default).
+
+  Cleartext HTTP is disallowed everywhere by default — a user on a
+  hostile network can no longer have their image / analysis data /
+  API key intercepted in flight.
+
+  Debug builds can override this file with their own copy under
+  src/debug/res/xml/network_security_config.xml that flips
+  cleartextTrafficPermitted="true" for `localhost` and any specific
+  LAN dev IP. Android's manifest-merger picks the debug variant
+  during dev workflow, so production APKs ship with cleartext denied.
+
+  TODO before production: add explicit cert pinning for your real
+  server's leaf or intermediate certificate, e.g.
+    <domain-config>
+      <domain>api.your-server.com</domain>
+      <pin-set expiration="2027-01-01">
+        <pin digest="SHA-256">BASE64_OF_PUBKEY_HASH</pin>
+      </pin-set>
+    </domain-config>
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

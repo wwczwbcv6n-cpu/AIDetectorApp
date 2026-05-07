@@ -31,12 +31,34 @@ fun SettingsScreen(viewModel: AppViewModel) {
         // API Configuration Section
         Text("API Configuration", style = MaterialTheme.typography.h6)
 
+        // Material 2 doesn't have `supportingText`; we surface the
+        // cleartext-warning as a separate Text below the field.
+        val urlError = settings.apiBaseUrl.isNotBlank() &&
+                !settings.isApiUrlAcceptable()
         OutlinedTextField(
             value = settings.apiBaseUrl,
             onValueChange = { settings = settings.copy(apiBaseUrl = it) },
             label = { Text("API Base URL") },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("http://192.168.1.100:8080") }
+            placeholder = { Text("https://api.example.com") },
+            isError = urlError,
+            singleLine = true,
+        )
+        if (urlError) {
+            Text(
+                "Use https://… (cleartext http only allowed on localhost / LAN)",
+                style = MaterialTheme.typography.caption,
+                color = MaterialTheme.colors.error,
+            )
+        }
+
+        OutlinedTextField(
+            value = settings.apiKey,
+            onValueChange = { settings = settings.copy(apiKey = it.trim()) },
+            label = { Text("API Key (X-API-Key)") },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("paste the key your server admin issued") },
+            singleLine = true,
         )
 
         OutlinedTextField(

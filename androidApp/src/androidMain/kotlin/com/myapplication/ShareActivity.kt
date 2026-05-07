@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myapplication.common.data.AIDetectorApi
 import com.myapplication.common.data.AnalysisResult
+import com.myapplication.common.data.AppSettings
+import com.myapplication.common.data.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -23,7 +25,15 @@ import kotlinx.coroutines.withContext
 
 class ShareActivity : ComponentActivity() {
 
-    private val api = AIDetectorApi()
+    // Lazy: only constructed once we have an Android Context (post-onCreate).
+    // The ctor was previously bare `AIDetectorApi()` which used a hardcoded
+    // LAN IP — now we read the user-configured base URL + API key from
+    // SettingsRepository, with a non-functional fallback that surfaces a
+    // clear error to the user instead of silently reaching out to a
+    // developer's laptop.
+    private val settingsRepo by lazy { SettingsRepository(this) }
+    private var settings: AppSettings = AppSettings()
+    private var api: AIDetectorApi? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,13 +59,32 @@ class ShareActivity : ComponentActivity() {
     fun ShareScreen(uri: Uri?) {
         var result by remember { mutableStateOf<Result<AnalysisResult>?>(null) }
         var isLoading by remember { mutableStateOf(false) }
+        var configError by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(uri) {
             if (uri != null) {
                 isLoading = true
                 CoroutineScope(Dispatchers.IO).launch {
+                    // Load settings first; refuse to fire if the user
+                    // hasn't configured a server.
+                    settings = settingsRepo.getSettings()
+                    if (!settings.isApiUrlAcceptable()) {
+                        withContext(Dispatchers.Main) {
+                            configError = "Set API Base URL in app Settings " +
+                                "before using Share-to-AI-Detector."
+                            isLoading = false
+                        }
+                        return@launch
+                    }
+                    if (api == null) {
+                        api = AIDetectorApi(
+                            baseUrl = settings.apiBaseUrl,
+                            apiKey = settings.apiKey.takeIf { it.isNotBlank() },
+                        )
+                    }
+
                     val imageData = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    val analysisResult = imageData?.let { api.analyzeImage(it) }
+                    val analysisResult = imageData?.let { api?.analyzeImage(it) }
 
                     withContext(Dispatchers.Main) {
                         result = analysisResult
@@ -63,6 +92,12 @@ class ShareActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+        configError?.let { msg ->
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(msg, color = Color.Red, fontSize = 18.sp)
+            }
+            return
         }
 
         Box(

@@ -32,14 +32,29 @@ class ApiClient(private val settings: AppSettings) {
         install(HttpTimeout)
     }
 
+    /** Trim trailing slash so "${baseUrl}/analyze" doesn't become "host//analyze". */
+    private val baseUrl: String get() = settings.apiBaseUrl.trim().trimEnd('/')
+
+    /** Reject early if the user hasn't configured a valid URL. */
+    private fun ensureUrl() {
+        check(settings.isApiUrlAcceptable()) {
+            "API base URL is not configured or uses cleartext on a public host. " +
+            "Open Settings → API URL and set an https:// endpoint."
+        }
+    }
+
+    /** Add the X-API-Key header when an api key has been configured. */
+    private fun HttpRequestBuilder.applyAuth() {
+        val key = settings.apiKey.trim()
+        if (key.isNotEmpty()) header("X-API-Key", key)
+    }
+
     suspend fun analyzeImage(imageData: ByteArray): Result<ApiAnalysisResult> {
         return try {
-            val response: ApiAnalysisResult = httpClient.post(
-                "${settings.apiBaseUrl}/analyze"
-            ) {
-                timeout {
-                    requestTimeoutMillis = settings.apiTimeout
-                }
+            ensureUrl()
+            val response: ApiAnalysisResult = httpClient.post("$baseUrl/analyze") {
+                applyAuth()
+                timeout { requestTimeoutMillis = settings.apiTimeout }
                 setBody(
                     MultiPartFormDataContent(
                         formData {
@@ -53,6 +68,7 @@ class ApiClient(private val settings: AppSettings) {
             }.body()
             Result.success(response)
         } catch (e: Exception) {
+            // Log via plugin in production — never leak to user UI.
             e.printStackTrace()
             Result.failure(e)
         }
@@ -63,12 +79,10 @@ class ApiClient(private val settings: AppSettings) {
         includeHeatmap: Boolean = true
     ): Result<ApiAnalysisResult> {
         return try {
-            val response: ApiAnalysisResult = httpClient.post(
-                "${settings.apiBaseUrl}/analyze"
-            ) {
-                timeout {
-                    requestTimeoutMillis = settings.apiTimeout
-                }
+            ensureUrl()
+            val response: ApiAnalysisResult = httpClient.post("$baseUrl/analyze") {
+                applyAuth()
+                timeout { requestTimeoutMillis = settings.apiTimeout }
                 parameter("heatmap", includeHeatmap)
                 setBody(
                     MultiPartFormDataContent(
@@ -90,10 +104,10 @@ class ApiClient(private val settings: AppSettings) {
 
     suspend fun healthCheck(): Result<Unit> {
         return try {
-            httpClient.get("${settings.apiBaseUrl}/health") {
-                timeout {
-                    requestTimeoutMillis = 5000
-                }
+            ensureUrl()
+            httpClient.get("$baseUrl/health") {
+                applyAuth()
+                timeout { requestTimeoutMillis = 5000 }
             }
             Result.success(Unit)
         } catch (e: Exception) {

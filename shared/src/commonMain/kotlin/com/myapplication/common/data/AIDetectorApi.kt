@@ -9,7 +9,32 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 
-class AIDetectorApi {
+/**
+ * Thin wrapper around the /analyze endpoint. The constructor used to
+ * hardcode `http://192.168.1.142:8080` which (a) shipped a single
+ * developer's LAN IP to every user's phone, and (b) sent image data
+ * over cleartext HTTP that any public-WiFi attacker could intercept.
+ *
+ * Now: caller MUST provide a base URL — typically `settings.apiBaseUrl`
+ * from [AppSettings]. Mutating endpoints additionally accept an
+ * `apiKey` so the request carries `X-API-Key` (server requires it for
+ * /rag/* and /finetune; analyze accepts it for rate-limit identity).
+ *
+ * Prefer [ApiClient] for new code — it ties the URL + timeout +
+ * settings together. This class is kept for the simpler "just analyze
+ * one image" path used in a couple of UI flows.
+ */
+class AIDetectorApi(
+    private val baseUrl: String,
+    private val apiKey: String? = null,
+) {
+
+    init {
+        require(baseUrl.isNotBlank()) {
+            "AIDetectorApi requires a non-empty baseUrl — read it from " +
+            "AppSettings.apiBaseUrl, do not hardcode."
+        }
+    }
 
     private val httpClient = HttpClient {
         install(ContentNegotiation) {
@@ -23,12 +48,17 @@ class AIDetectorApi {
 
     suspend fun analyzeImage(imageData: ByteArray): Result<AnalysisResult> {
         return try {
-            val response: AnalysisResult = httpClient.post("http://192.168.1.142:8080/analyze") { // Update to machine's local IP
+            val response: AnalysisResult = httpClient.post(
+                "${baseUrl.trimEnd('/')}/analyze"
+            ) {
+                apiKey?.takeIf { it.isNotBlank() }?.let {
+                    header("X-API-Key", it)
+                }
                 setBody(
                     MultiPartFormDataContent(
                         formData {
                             append("image", imageData, Headers.build {
-                                append(HttpHeaders.ContentType, "image/jpeg") // Assuming JPEG, adjust if needed
+                                append(HttpHeaders.ContentType, "image/jpeg")
                                 append(HttpHeaders.ContentDisposition, "filename=\"image.jpg\"")
                             })
                         }
@@ -37,7 +67,9 @@ class AIDetectorApi {
             }.body()
             Result.success(response)
         } catch (e: Exception) {
-            // In a real app, log this exception
+            // In a real app, log this exception via the Logging plugin —
+            // never let a stack trace surface to the user (it can leak
+            // local IPs, file paths, or auth headers).
             e.printStackTrace()
             Result.failure(e)
         }
