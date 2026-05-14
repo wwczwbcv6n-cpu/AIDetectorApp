@@ -1,5 +1,6 @@
 package com.myapplication.common.ui
 
+import com.myapplication.common.formatTo
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -179,7 +180,7 @@ fun DetailScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                             ) {
                                 Text(key, style = MaterialTheme.typography.body2)
                                 Text(
-                                    String.format("%.4f", value),
+                                    value.formatTo(4),
                                     style = MaterialTheme.typography.body2,
                                     color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f),
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace

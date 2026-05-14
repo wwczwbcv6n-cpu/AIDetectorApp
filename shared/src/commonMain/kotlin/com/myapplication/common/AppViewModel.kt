@@ -11,6 +11,7 @@ import com.myapplication.common.data.ApiClient
 import com.myapplication.common.data.AppSettings
 import com.myapplication.common.data.SettingsRepository
 import com.myapplication.common.data.HeatmapUtils
+import com.myapplication.common.nowMillis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -83,7 +84,7 @@ class AppViewModel(
             detectedImage = null
             selectedHistoryEntry = null
 
-            val startTime = System.currentTimeMillis()
+            val startTime = nowMillis()
             try {
                 // Try API first if configured
                 val apiResult = if (settings.enableHeatmap) {
@@ -94,7 +95,7 @@ class AppViewModel(
 
                 if (apiResult?.isSuccess == true) {
                     val result = apiResult.getOrNull()!!
-                    val processingTime = System.currentTimeMillis() - startTime
+                    val processingTime = nowMillis() - startTime
 
                     // Build UI state
                     analysisResult = AnalysisUIState(
@@ -136,11 +137,11 @@ class AppViewModel(
         fileSize: Long
     ) {
         try {
-            val startTime = System.currentTimeMillis()
+            val startTime = nowMillis()
             val result = withContext(Dispatchers.Default) {
                 heuristicDetector.analyze(imageData)
             }
-            val processingTime = System.currentTimeMillis() - startTime
+            val processingTime = nowMillis() - startTime
 
             analysisResult = AnalysisUIState(
                 isAI = result.isAI,

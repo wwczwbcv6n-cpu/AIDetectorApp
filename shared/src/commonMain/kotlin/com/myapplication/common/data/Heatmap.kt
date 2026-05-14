@@ -3,9 +3,10 @@ package com.myapplication.common.data
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.serialization.Serializable
 import org.jetbrains.skia.Image
-import java.util.Base64
 
 @Serializable
 data class HeatmapData(
@@ -30,9 +31,10 @@ object HeatmapUtils {
     /**
      * Decode base64 heatmap image to ImageBitmap
      */
+    @OptIn(ExperimentalEncodingApi::class)
     fun decodeHeatmapImage(base64: String): ImageBitmap? {
         return try {
-            val imageData = Base64.getDecoder().decode(base64)
+            val imageData = Base64.decode(base64)
             val skiaImage = Image.makeFromEncoded(imageData)
             skiaImage.toComposeImageBitmap()
         } catch (e: Exception) {

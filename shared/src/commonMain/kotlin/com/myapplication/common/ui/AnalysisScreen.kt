@@ -1,5 +1,6 @@
 package com.myapplication.common.ui
 
+import com.myapplication.common.formatTo
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -192,7 +193,7 @@ fun AnalysisScreen(viewModel: AppViewModel) {
                             ) {
                                 Text(key, style = MaterialTheme.typography.body2)
                                 Text(
-                                    String.format("%.4f", value),
+                                    value.formatTo(4),
                                     style = MaterialTheme.typography.body2,
                                     color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
                                 )

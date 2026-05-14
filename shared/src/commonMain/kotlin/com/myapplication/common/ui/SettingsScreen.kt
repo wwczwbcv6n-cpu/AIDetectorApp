@@ -1,5 +1,6 @@
 package com.myapplication.common.ui
 
+import com.myapplication.common.formatTo
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -87,7 +88,7 @@ fun SettingsScreen(viewModel: AppViewModel) {
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Confidence Threshold: ${String.format("%.2f", settings.confidenceThreshold)}")
+            Text("Confidence Threshold: ${settings.confidenceThreshold.formatTo(2)}")
             Spacer(modifier = Modifier.weight(1f))
         }
 

@@ -1,12 +1,15 @@
 package com.myapplication.common.data
 
+import com.myapplication.common.formatTimestamp
+import com.myapplication.common.formatTo
+import com.myapplication.common.nowMillis
 import kotlinx.serialization.Serializable
 import kotlin.random.Random
 
 @Serializable
 data class AnalysisHistoryEntry(
     val id: String = Random.nextLong().toString(),
-    val timestamp: Long = System.currentTimeMillis(),
+    val timestamp: Long = nowMillis(),
     val fileName: String,
     val fileSize: Long, // bytes
     val isAI: Boolean,
@@ -17,12 +20,12 @@ data class AnalysisHistoryEntry(
     val notes: String = ""
 ) {
     val formattedTime: String
-        get() = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(timestamp)
+        get() = formatTimestamp(timestamp)
 
     val formattedSize: String
         get() = when {
-            fileSize > 1024 * 1024 -> "%.2f MB".format(fileSize / (1024f * 1024f))
-            fileSize > 1024 -> "%.2f KB".format(fileSize / 1024f)
+            fileSize > 1024 * 1024 -> "${(fileSize / (1024f * 1024f)).formatTo(2)} MB"
+            fileSize > 1024 -> "${(fileSize / 1024f).formatTo(2)} KB"
             else -> "$fileSize B"
         }
 
