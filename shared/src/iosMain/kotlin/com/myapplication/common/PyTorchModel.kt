@@ -10,19 +10,26 @@ actual class PyTorchModel actual constructor(private val context: Any) { // cont
     private var module: PyTorchLiteModule? = null
 
     actual fun loadModel(assetName: String) {
-        // For iOS, the model is typically bundled in the app's main bundle
-        val path = NSBundle.mainBundle.pathForResource(assetName.substringBefore("."), assetName.substringAfter("."))
-        if (path == null) {
-            println("Error: Model asset $assetName not found in main bundle.")
-            return
-        }
+        // For iOS, the model is typically bundled in the app's main bundle.
+        val path = NSBundle.mainBundle.pathForResource(
+            assetName.substringBefore("."),
+            assetName.substringAfter("."),
+        ) ?: throw PyTorchInferenceException(
+            "Model asset '$assetName' not found in main bundle"
+        )
         module = PyTorchLiteModule(path)
     }
 
     actual fun predict(input: FloatArray, inputShape: LongArray): FloatArray {
+        val mod = module
+            ?: throw PyTorchInferenceException("predict() called before a model was loaded")
         return plmScoped {
-            val output = module?.forward(input, inputShape)
-            output ?: floatArrayOf()
+            val output = mod.forward(input, inputShape)
+                ?: throw PyTorchInferenceException("Model forward pass returned no output")
+            if (output.isEmpty()) {
+                throw PyTorchInferenceException("Model returned an empty output")
+            }
+            output
         }
     }
 }

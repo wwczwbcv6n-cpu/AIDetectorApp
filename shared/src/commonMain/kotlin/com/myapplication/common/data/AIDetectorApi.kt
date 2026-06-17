@@ -74,4 +74,11 @@ class AIDetectorApi(
             Result.failure(e)
         }
     }
+
+    /** Release the underlying HttpClient. Call from the owner's teardown
+     *  (e.g. Activity.onDestroy) so the connection pool / engine threads
+     *  don't outlive the screen that created them. */
+    fun close() {
+        httpClient.close()
+    }
 }

@@ -6,8 +6,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import com.myapplication.common.data.AnalysisHistoryEntry
 import com.myapplication.common.data.AnalysisHistoryRepository
-import com.myapplication.common.data.ApiAnalysisResult
 import com.myapplication.common.data.ApiClient
+import com.myapplication.common.data.ApiError
+import com.myapplication.common.data.ApiException
 import com.myapplication.common.data.AppSettings
 import com.myapplication.common.data.SettingsRepository
 import com.myapplication.common.data.HeatmapUtils
@@ -77,6 +78,12 @@ class AppViewModel(
     }
 
     fun analyzeImage(imageData: ByteArray, fileName: String, fileSize: Long = 0L) {
+        // In-flight guard (#5): ignore taps while a request is already running so
+        // a double-tap can't fire two overlapping analyses / two history writes.
+        if (isLoading) {
+            Logger.debug("analyzeImage ignored — a request is already in flight")
+            return
+        }
         coroutineScope.launch {
             isLoading = true
             errorMessage = null
@@ -86,55 +93,104 @@ class AppViewModel(
 
             val startTime = nowMillis()
             try {
-                // Try API first if configured
+                val client = apiClient
+                if (client == null) {
+                    // Settings not yet loaded / client not built — fall back to the
+                    // on-device estimate but say so, don't pretend it's the server.
+                    analyzeWithLocalModel(imageData, fileName, fileSize, offline = true)
+                    return@launch
+                }
+
+                // Try the server first.
                 val apiResult = if (settings.enableHeatmap) {
-                    apiClient?.analyzeImageWithHeatmap(imageData)
+                    client.analyzeImageWithHeatmap(imageData)
                 } else {
-                    apiClient?.analyzeImage(imageData)
+                    client.analyzeImage(imageData)
                 }
 
-                if (apiResult?.isSuccess == true) {
-                    val result = apiResult.getOrNull()!!
-                    val processingTime = nowMillis() - startTime
+                apiResult.fold(
+                    onSuccess = { result ->
+                        val processingTime = nowMillis() - startTime
 
-                    // Build UI state
-                    analysisResult = AnalysisUIState(
-                        isAI = result.isAI,
-                        confidence = result.confidence,
-                        processingTimeMs = processingTime,
-                        detailedFeatures = result.detailedFeatures,
-                        heatmapImage = result.heatmap?.let { HeatmapUtils.decodeHeatmapImage(it) }
-                    )
+                        analysisResult = AnalysisUIState(
+                            isAI = result.isAI,
+                            confidence = result.uiConfidence,
+                            processingTimeMs = processingTime,
+                            heatmapImage = result.heatmapBase64
+                                ?.let { HeatmapUtils.decodeHeatmapImage(it) }
+                        )
 
-                    // Save to history
-                    val entry = AnalysisHistoryEntry(
-                        fileName = fileName,
-                        fileSize = fileSize,
-                        isAI = result.isAI,
-                        confidence = result.confidence,
-                        analysisMode = settings.analysisMode.name,
-                        processingTimeMs = processingTime,
-                        heatmapBase64 = result.heatmap
-                    )
-                    historyRepository.addEntry(entry)
-                    loadHistory()
-                } else {
-                    // Fallback to local model
-                    analyzeWithLocalModel(imageData, fileName, fileSize)
-                }
+                        val entry = AnalysisHistoryEntry(
+                            fileName = fileName,
+                            fileSize = fileSize,
+                            isAI = result.isAI,
+                            confidence = result.uiConfidence,
+                            analysisMode = settings.analysisMode.name,
+                            processingTimeMs = processingTime,
+                            heatmapBase64 = result.heatmapBase64
+                        )
+                        historyRepository.addEntry(entry)
+                        loadHistory()
+                    },
+                    onFailure = { e -> handleAnalyzeFailure(e, imageData, fileName, fileSize) }
+                )
             } catch (e: Exception) {
-                e.printStackTrace()
-                errorMessage = "Analysis failed: ${e.message}"
+                // Defensive: runAnalyze already wraps failures in Result, so we
+                // shouldn't normally land here — surface it rather than hide it.
+                Logger.error("analyzeImage unexpected failure", e)
+                errorMessage = "Analysis failed: ${e.message ?: "unknown error"}"
             } finally {
                 isLoading = false
             }
         }
     }
 
+    /**
+     * Map a typed [ApiError] to a visible UI state (#2). Transport-level
+     * failures (offline / timeout / not-configured) optionally fall back to the
+     * on-device heuristic — but ALWAYS clearly labelled as an offline estimate,
+     * never silently substituted for the server's verdict. Auth / parse / server
+     * errors do NOT fall back: hiding them behind the heuristic is what made the
+     * server look like it "worked" while never being used.
+     */
+    private suspend fun handleAnalyzeFailure(
+        e: Throwable,
+        imageData: ByteArray,
+        fileName: String,
+        fileSize: Long,
+    ) {
+        val apiError = (e as? ApiException)?.apiError
+        Logger.warn("analyze API failed: ${apiError ?: e.message}")
+        when (apiError) {
+            is ApiError.Network,
+            is ApiError.Timeout,
+            is ApiError.Configuration -> {
+                // Offline-style failure → on-device estimate, clearly marked.
+                errorMessage = apiError.userMessage + " Showing an on-device estimate."
+                analyzeWithLocalModel(imageData, fileName, fileSize, offline = true)
+            }
+            null -> {
+                // Non-ApiException (shouldn't happen) — surface generically.
+                errorMessage = "Analysis failed: ${e.message ?: "unknown error"}"
+            }
+            else -> {
+                // Auth / ClientError / ServerError / Parse / Unknown — show it.
+                errorMessage = apiError.userMessage
+            }
+        }
+    }
+
+    /**
+     * Run the on-device heuristic detector. [offline] = true means this is an
+     * explicit fallback for a transport failure (an informational [errorMessage]
+     * has already been set by the caller and must be preserved); false means a
+     * directly-requested local analysis.
+     */
     private suspend fun analyzeWithLocalModel(
         imageData: ByteArray,
         fileName: String,
-        fileSize: Long
+        fileSize: Long,
+        offline: Boolean = false,
     ) {
         try {
             val startTime = nowMillis()
@@ -162,8 +218,11 @@ class AppViewModel(
             historyRepository.addEntry(entry)
             loadHistory()
         } catch (e: Exception) {
-            e.printStackTrace()
-            errorMessage = "Local analysis failed: ${e.message}"
+            Logger.error("Local analysis failed", e)
+            // Don't clobber a more-informative server error when this was a fallback.
+            if (!offline || errorMessage == null) {
+                errorMessage = "Local analysis failed: ${e.message ?: "unknown error"}"
+            }
         }
     }
 

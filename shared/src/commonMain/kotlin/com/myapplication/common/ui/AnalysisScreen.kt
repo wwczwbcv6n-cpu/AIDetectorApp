@@ -33,7 +33,9 @@ fun AnalysisScreen(viewModel: AppViewModel) {
         // Header
         Text("AI Image Detector", style = MaterialTheme.typography.h4)
 
-        // Image Picker Button
+        // Image Picker Button — disabled while a request is in flight (#5) so a
+        // double-tap can't enqueue a second overlapping analysis. The ViewModel
+        // also guards against this, but disabling gives the user clear feedback.
         Button(
             onClick = {
                 imagePicker.pickImage { imageBytesList ->
@@ -46,9 +48,10 @@ fun AnalysisScreen(viewModel: AppViewModel) {
                     }
                 }
             },
+            enabled = !viewModel.isLoading,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Select Image to Analyze")
+            Text(if (viewModel.isLoading) "Analyzing…" else "Select Image to Analyze")
         }
 
         // Loading Indicator
