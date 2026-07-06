@@ -21,5 +21,9 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">localhost</domain>
         <domain includeSubdomains="false">10.0.2.2</domain>
+        <!-- Laptop-as-server over Tailscale (reachable from any network). -->
+        <domain includeSubdomains="false">100.66.129.91</domain>
+        <!-- Laptop-as-server over local Wi-Fi LAN. -->
+        <domain includeSubdomains="false">192.168.1.163</domain>
     </domain-config>
 </network-security-config>

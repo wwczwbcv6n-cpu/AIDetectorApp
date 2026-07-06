@@ -19,7 +19,7 @@ import kotlinx.serialization.Serializable
 data class AppSettings(
     val apiBaseUrl: String = "",
     val apiKey: String = "",
-    val apiTimeout: Long = 30000L, // milliseconds
+    val apiTimeout: Long = 60000L, // milliseconds (union head can take ~25s/image on CPU)
     val confidenceThreshold: Float = 0.5f,
     val enableHeatmap: Boolean = true,
     val enableLogging: Boolean = false,
@@ -33,25 +33,28 @@ data class AppSettings(
     }
 
     /** True when the URL is set AND uses a safe scheme.
-     *  Plain `http://` is allowed only against localhost / private LAN
-     *  ranges (the network_security_config still blocks it on hostile
-     *  networks); for everything else require https. */
+     *  Plain `http://` is allowed only against localhost, RFC1918 LAN, or a
+     *  Tailscale address (100.64.0.0/10 — a private, encrypted device-to-device
+     *  mesh, so cleartext over it is not exposed to hostile networks); for
+     *  everything else require https. */
     fun isApiUrlAcceptable(): Boolean {
         val u = apiBaseUrl.trim()
         if (u.isBlank()) return false
         if (u.startsWith("https://", ignoreCase = true)) return true
         if (!u.startsWith("http://", ignoreCase = true)) return false
-        // Allow http only on localhost or RFC1918 LAN — production must use https.
+        // Allow http only on localhost / RFC1918 LAN / Tailscale — else https.
         val hostPart = u.removePrefix("http://").substringBefore('/').substringBefore(':')
         if (hostPart.equals("localhost", ignoreCase = true)) return true
         if (hostPart == "10.0.2.2") return true // Android emulator host alias
-        // Crude RFC1918 check: 10.x, 172.16-31.x, 192.168.x.x
+        // Crude private-range check: 10.x, 172.16-31.x, 192.168.x.x,
+        // plus Tailscale CGNAT 100.64.0.0/10 (100.64.x .. 100.127.x).
         val parts = hostPart.split('.').mapNotNull { it.toIntOrNull() }
         if (parts.size != 4) return false
         return when {
             parts[0] == 10 -> true
             parts[0] == 172 && parts[1] in 16..31 -> true
             parts[0] == 192 && parts[1] == 168 -> true
+            parts[0] == 100 && parts[1] in 64..127 -> true // Tailscale
             else -> false
         }
     }
