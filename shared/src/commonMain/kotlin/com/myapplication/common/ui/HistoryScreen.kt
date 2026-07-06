@@ -144,27 +144,8 @@ fun HistoryEntryCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // AI/Real Indicator
-            Box(
-                modifier = Modifier
-                    .size(48.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = if (entry.isAI) Color(0xFFFFE0E0) else Color(0xFFE0FFE0),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = if (entry.isAI) "AI" else "Real",
-                            fontSize = 12.sp,
-                            color = if (entry.isAI) Color(0xFFCC0000) else Color(0xFF00CC00),
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                        )
-                    }
-                }
-            }
+            // Three-band verdict indicator (matches the analysis + detail screens).
+            VerdictBadge(entry.verdictBand)
 
             // Entry Details
             Column(

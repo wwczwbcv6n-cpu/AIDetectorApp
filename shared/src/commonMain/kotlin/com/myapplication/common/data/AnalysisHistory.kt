@@ -17,8 +17,16 @@ data class AnalysisHistoryEntry(
     val analysisMode: String,
     val processingTimeMs: Long,
     val heatmapBase64: String? = null,
-    val notes: String = ""
+    val notes: String = "",
+    // Persisted three-band verdict name ([Verdict.name]). Nullable + defaulted
+    // so entries written before the three-band migration still deserialize;
+    // when absent we fall back to the [isAI] boolean.
+    val verdict: String? = null
 ) {
+    /** The three-band [Verdict], preferring the persisted name over [isAI]. */
+    val verdictBand: Verdict
+        get() = Verdict.fromName(verdict) ?: Verdict.fromBoolean(isAI)
+
     val formattedTime: String
         get() = formatTimestamp(timestamp)
 
@@ -30,7 +38,12 @@ data class AnalysisHistoryEntry(
         }
 
     val statusText: String
-        get() = if (isAI) "AI Generated" else "Real"
+        get() = when (verdictBand) {
+            Verdict.AUTHENTIC -> "Likely authentic"
+            Verdict.AI -> "Likely AI-generated"
+            Verdict.UNCERTAIN -> "Uncertain"
+            Verdict.TAMPERED -> "Possibly edited"
+        }
 }
 
 expect class AnalysisHistoryRepository {

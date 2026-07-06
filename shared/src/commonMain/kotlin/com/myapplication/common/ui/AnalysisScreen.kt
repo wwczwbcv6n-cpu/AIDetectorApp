@@ -105,60 +105,21 @@ fun AnalysisScreen(viewModel: AppViewModel) {
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Status
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier.size(48.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Surface(
-                                shape = MaterialTheme.shapes.medium,
-                                color = if (result.isAI) Color(0xFFFFE0E0) else Color(0xFFE0FFE0),
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = if (result.isAI) "AI" else "Real",
-                                        fontSize = 14.sp,
-                                        color = if (result.isAI) Color(0xFFCC0000) else Color(0xFF00CC00),
-                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-
-                        Column {
-                            Text(
-                                text = if (result.isAI) "AI Generated" else "Real Image",
-                                style = MaterialTheme.typography.h6
-                            )
-                            Text(
-                                text = "Confidence: ${(result.confidence * 100).toInt()}%",
-                                style = MaterialTheme.typography.body2
-                            )
-                        }
-                    }
+                    // Three-band verdict header — honest copy, explicit
+                    // "uncertain" band, never a bare binary "FAKE" stamp.
+                    VerdictStatusHeader(result.verdict, result.confidence)
 
                     Divider()
 
-                    // Confidence Bar
+                    // AI-generated probability bar, coloured by the verdict band.
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Confidence Score", style = MaterialTheme.typography.caption)
+                        Text("AI-generated probability", style = MaterialTheme.typography.caption)
                         LinearProgressIndicator(
                             progress = result.confidence,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(8.dp),
-                            color = when {
-                                result.confidence > 0.8f -> Color(0xFFCC0000)
-                                result.confidence > 0.6f -> Color(0xFFFF6600)
-                                result.confidence > 0.4f -> Color(0xFFFFCC00)
-                                else -> Color(0xFF00CC00)
-                            }
+                            color = result.verdict.visuals().accent
                         )
                     }
 

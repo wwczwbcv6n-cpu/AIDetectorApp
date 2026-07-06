@@ -10,6 +10,14 @@ kotlin {
         val androidMain by getting {
             dependencies {
                 implementation(project(":shared"))
+                // The app module has its own Compose UI (MainActivity,
+                // ShareActivity). :shared exports Compose only as
+                // `implementation`, so declare the Compose surface directly
+                // here or these symbols won't resolve on the Android classpath.
+                implementation(compose.runtime)
+                implementation(compose.foundation)
+                implementation(compose.material)
+                implementation(compose.ui)
             }
         }
     }

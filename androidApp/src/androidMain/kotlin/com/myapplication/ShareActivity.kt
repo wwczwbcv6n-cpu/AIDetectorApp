@@ -14,24 +14,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.myapplication.common.data.AIDetectorApi
-import com.myapplication.common.data.AnalysisResult
+import com.myapplication.common.data.ApiAnalysisResult
+import com.myapplication.common.data.ApiClient
+import com.myapplication.common.data.ApiError
+import com.myapplication.common.data.ApiException
 import com.myapplication.common.data.AppSettings
 import com.myapplication.common.data.SettingsRepository
+import com.myapplication.common.ui.VerdictStatusHeader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * Share-sheet entry point — the product's primary, policy-safe surface (user
+ * taps Share in any app → picks us → we analyze). This now uses [ApiClient]
+ * (typed errors + the calibrated 3-way `verdict`) and renders the same honest
+ * three-band result as the in-app screens, instead of the old binary red/green
+ * stamp that turned an "uncertain" server call into a false accusation.
+ */
 class ShareActivity : ComponentActivity() {
 
     // Lazy: only constructed once we have an Android Context (post-onCreate).
-    // The ctor was previously bare `AIDetectorApi()` which used a hardcoded
-    // LAN IP — now we read the user-configured base URL + API key from
-    // SettingsRepository, with a non-functional fallback that surfaces a
-    // clear error to the user instead of silently reaching out to a
-    // developer's laptop.
     private val settingsRepo by lazy { SettingsRepository(this) }
     private var settings: AppSettings = AppSettings()
-    private var api: AIDetectorApi? = null
+    private var api: ApiClient? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,7 +52,7 @@ class ShareActivity : ComponentActivity() {
 
     override fun onDestroy() {
         // Release the HttpClient created for this share session so its engine /
-        // connection pool doesn't outlive the Activity (#4).
+        // connection pool doesn't outlive the Activity.
         try {
             api?.close()
         } catch (e: Exception) {
@@ -67,52 +72,48 @@ class ShareActivity : ComponentActivity() {
 
     @Composable
     fun ShareScreen(uri: Uri?) {
-        var result by remember { mutableStateOf<Result<AnalysisResult>?>(null) }
+        var result by remember { mutableStateOf<Result<ApiAnalysisResult>?>(null) }
         var isLoading by remember { mutableStateOf(false) }
         var configError by remember { mutableStateOf<String?>(null) }
 
         // Run the analysis inside the LaunchedEffect's own coroutine, which is
-        // tied to this composition's lifecycle and is cancelled automatically
-        // when the Activity is destroyed (#4). The previous code spawned an
-        // unscoped `CoroutineScope(Dispatchers.IO).launch {}` that escaped
-        // cancellation and leaked the work (+ HttpClient) past onDestroy.
+        // tied to this composition's lifecycle and cancelled automatically when
+        // the Activity is destroyed.
         LaunchedEffect(uri) {
             if (uri != null) {
                 isLoading = true
-                // Load settings first; refuse to fire if the user
-                // hasn't configured a server.
+                // Load settings first; refuse to fire if the user hasn't
+                // configured a server.
                 settings = withContext(Dispatchers.IO) { settingsRepo.getSettings() }
                 if (!settings.isApiUrlAcceptable()) {
-                    configError = "Set API Base URL in app Settings " +
-                        "before using Share-to-AI-Detector."
+                    configError = "Set the API Base URL in Settings before " +
+                        "using Share-to-AI-Detector."
                     isLoading = false
                     return@LaunchedEffect
                 }
-                if (api == null) {
-                    api = AIDetectorApi(
-                        baseUrl = settings.apiBaseUrl,
-                        apiKey = settings.apiKey.takeIf { it.isNotBlank() },
-                    )
-                }
+                if (api == null) api = ApiClient(settings)
 
-                val analysisResult = withContext(Dispatchers.IO) {
+                result = withContext(Dispatchers.IO) {
                     val imageData = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    imageData?.let { api?.analyzeImage(it) }
+                    if (imageData == null) {
+                        Result.failure(ApiException(ApiError.Unknown("Couldn't read the shared image.")))
+                    } else {
+                        api!!.analyzeImage(imageData)
+                    }
                 }
-
-                result = analysisResult
                 isLoading = false
             }
         }
+
         configError?.let { msg ->
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(msg, color = Color.Red, fontSize = 18.sp)
+            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                Text(msg, color = Color(0xFFCC0000), fontSize = 18.sp)
             }
             return
         }
 
         Box(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().padding(24.dp),
             contentAlignment = Alignment.Center
         ) {
             when {
@@ -120,18 +121,22 @@ class ShareActivity : ComponentActivity() {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("Analyzing...", fontSize = 18.sp)
+                        Text("Analyzing…", fontSize = 18.sp)
                     }
                 }
                 result != null -> {
-                    result!!.fold(
-                        onSuccess = {
-                            ResultView(it)
-                        },
-                        onFailure = {
-                            Text("Error: ${it.message}", color = Color.Red, fontSize = 18.sp)
-                        }
-                    )
+                    // Unwrap with plain if/else rather than Result.fold: fold's
+                    // lambdas are not @Composable, so composable calls aren't
+                    // allowed inside them.
+                    val success = result!!.getOrNull()
+                    if (success != null) {
+                        ResultView(success)
+                    } else {
+                        val e = result!!.exceptionOrNull()
+                        val msg = (e as? ApiException)?.apiError?.userMessage
+                            ?: e?.message ?: "Analysis failed."
+                        Text(msg, color = Color(0xFFCC0000), fontSize = 18.sp)
+                    }
                 }
                 uri == null -> {
                     Text("No image shared.", fontSize = 18.sp)
@@ -141,26 +146,21 @@ class ShareActivity : ComponentActivity() {
     }
 
     @Composable
-    fun ResultView(analysisResult: AnalysisResult) {
-        val isAiGenerated = analysisResult.conclusion.equals("AI-Generated", ignoreCase = true)
-        val color = if (isAiGenerated) Color(0xFFF44336) else Color(0xFF4CAF50) // Red for AI, Green for REAL
-
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = analysisResult.conclusion,
-                fontSize = 32.sp,
-                color = color,
-                style = MaterialTheme.typography.h4
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "AI Probability: %.2f%%".format(analysisResult.aiProbability * 100),
-                fontSize = 18.sp,
-                color = Color.Gray
-            )
+    fun ResultView(analysisResult: ApiAnalysisResult) {
+        val verdict = analysisResult.toVerdict(settings.confidenceThreshold)
+        Card(elevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                VerdictStatusHeader(verdict, analysisResult.uiConfidence)
+                Divider()
+                Text(
+                    text = "This is a probabilistic estimate and can be wrong.",
+                    style = MaterialTheme.typography.caption,
+                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                )
+            }
         }
     }
 }

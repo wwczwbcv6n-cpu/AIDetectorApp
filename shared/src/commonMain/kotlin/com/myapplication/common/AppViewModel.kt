@@ -12,6 +12,7 @@ import com.myapplication.common.data.ApiException
 import com.myapplication.common.data.AppSettings
 import com.myapplication.common.data.SettingsRepository
 import com.myapplication.common.data.HeatmapUtils
+import com.myapplication.common.data.Verdict
 import com.myapplication.common.nowMillis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,13 +22,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class AnalysisUIState(
-    val isAI: Boolean = false,
+    val verdict: Verdict = Verdict.AUTHENTIC,
     val confidence: Float = 0f,
     val processingTimeMs: Long = 0L,
     val processedImage: ImageBitmap? = null,
     val heatmapImage: ImageBitmap? = null,
     val detailedFeatures: Map<String, Float> = emptyMap()
-)
+) {
+    /** Kept for callers that still need the binary collapse. */
+    val isAI: Boolean get() = verdict == Verdict.AI
+}
 
 class AppViewModel(
     private val pyTorchModel: PyTorchModel,
@@ -111,9 +115,10 @@ class AppViewModel(
                 apiResult.fold(
                     onSuccess = { result ->
                         val processingTime = nowMillis() - startTime
+                        val verdict = result.toVerdict(settings.confidenceThreshold)
 
                         analysisResult = AnalysisUIState(
-                            isAI = result.isAI,
+                            verdict = verdict,
                             confidence = result.uiConfidence,
                             processingTimeMs = processingTime,
                             heatmapImage = result.heatmapBase64
@@ -127,7 +132,8 @@ class AppViewModel(
                             confidence = result.uiConfidence,
                             analysisMode = settings.analysisMode.name,
                             processingTimeMs = processingTime,
-                            heatmapBase64 = result.heatmapBase64
+                            heatmapBase64 = result.heatmapBase64,
+                            verdict = verdict.name
                         )
                         historyRepository.addEntry(entry)
                         loadHistory()
@@ -198,9 +204,10 @@ class AppViewModel(
                 heuristicDetector.analyze(imageData)
             }
             val processingTime = nowMillis() - startTime
+            val verdict = Verdict.fromBoolean(result.isAI)
 
             analysisResult = AnalysisUIState(
-                isAI = result.isAI,
+                verdict = verdict,
                 confidence = result.confidence,
                 processingTimeMs = processingTime,
                 processedImage = result.processedImage,
@@ -213,7 +220,8 @@ class AppViewModel(
                 isAI = result.isAI,
                 confidence = result.confidence,
                 analysisMode = "LOCAL",
-                processingTimeMs = processingTime
+                processingTimeMs = processingTime,
+                verdict = verdict.name
             )
             historyRepository.addEntry(entry)
             loadHistory()
@@ -263,7 +271,7 @@ class AppViewModel(
     fun selectHistoryEntry(entry: AnalysisHistoryEntry) {
         selectedHistoryEntry = entry
         analysisResult = AnalysisUIState(
-            isAI = entry.isAI,
+            verdict = entry.verdictBand,
             confidence = entry.confidence,
             processingTimeMs = entry.processingTimeMs,
             heatmapImage = entry.heatmapBase64?.let { HeatmapUtils.decodeHeatmapImage(it) }

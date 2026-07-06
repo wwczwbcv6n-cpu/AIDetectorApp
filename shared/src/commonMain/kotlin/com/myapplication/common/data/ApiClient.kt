@@ -52,9 +52,20 @@ data class ApiAnalysisResult(
     @SerialName("inference_ms") val inferenceMs: Double? = null,
     @SerialName("model_type") val modelType: String? = null,
     @SerialName("detector_version") val detectorVersion: String? = null,
+    @SerialName("verdict_band") val verdictBand: String? = null,
     @SerialName("error") val error: String? = null,
     @SerialName("error_code") val errorCode: String? = null,
 ) {
+    /**
+     * The calibrated three-band verdict for the UI. Trusts the server's own
+     * 3-way `verdict` ("ai"/"real"/"uncertain"/"tampered"); falls back to
+     * `conclusion` / `ai_probability` (with an uncertain band around
+     * [threshold]) only for a legacy backend that doesn't emit `verdict`.
+     * This is what keeps an "uncertain" server call from becoming a false
+     * accusation in the app.
+     */
+    fun toVerdict(threshold: Float = 0.5f): Verdict =
+        Verdict.fromServer(verdict, conclusion, aiProbability, threshold)
     /**
      * Binary AI/real call for the UI. Trusts the server's own collapse:
      * `conclusion == "AI-Generated"` (which the v2 backend only emits when

@@ -2,11 +2,17 @@ package com.myapplication.common.data
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.serialization.Serializable
-import org.jetbrains.skia.Image
+
+/**
+ * Platform bitmap decode. `org.jetbrains.skia` is available for the desktop
+ * (skiko) and iOS targets but NOT for the Android target (Jetpack Compose),
+ * so the raw byte→ImageBitmap step lives in per-platform `actual`s while the
+ * Base64 handling stays common.
+ */
+expect fun decodeImageBitmap(bytes: ByteArray): ImageBitmap?
 
 @Serializable
 data class HeatmapData(
@@ -34,11 +40,8 @@ object HeatmapUtils {
     @OptIn(ExperimentalEncodingApi::class)
     fun decodeHeatmapImage(base64: String): ImageBitmap? {
         return try {
-            val imageData = Base64.decode(base64)
-            val skiaImage = Image.makeFromEncoded(imageData)
-            skiaImage.toComposeImageBitmap()
+            decodeImageBitmap(Base64.decode(base64))
         } catch (e: Exception) {
-            e.printStackTrace()
             null
         }
     }
