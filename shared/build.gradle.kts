@@ -52,9 +52,11 @@ kotlin {
                 // Security/Encryption
                 implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-                // PyTorch Android (keeping existing dependency)
-                implementation("org.pytorch:pytorch_android:2.1.0")
-                implementation("org.pytorch:pytorch_android_torchvision:2.1.0")
+                // NOTE: org.pytorch:pytorch_android deliberately REMOVED — the
+                // on-device model path was never invoked, yet its native libs
+                // (4 ABIs) + bundled .ptl asset were ~350 MB of the APK. The
+                // Android PyTorchModel actual is a stub (see PyTorchModel.kt);
+                // sprint-2 on-device inference will use ONNX Runtime / LiteRT.
             }
         }
         val iosX64Main by getting

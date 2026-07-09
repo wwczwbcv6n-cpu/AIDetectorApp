@@ -1,58 +1,26 @@
 package com.myapplication.common
 
-import android.content.Context
-import org.pytorch.Module
-import org.pytorch.IValue
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
-
-actual class PyTorchModel actual constructor(private val context: Any) {
-    private var module: Module? = null
+/**
+ * Android stub for the LibTorch-Mobile-backed PyTorchModel.
+ *
+ * Nothing in the app ever called loadModel()/predict(), yet the org.pytorch
+ * dependency shipped ~300 MB of native libs (4 ABIs) plus a 74 MB bundled
+ * .ptl asset — ~95% of the APK for a code path that never ran. The Android
+ * build now mirrors the desktop stub: analysis goes to the server, with the
+ * HeuristicAIDetector as the offline fallback. When the on-device DINOv2
+ * (sprint 2) lands it will use ONNX Runtime / LiteRT per the deployment
+ * plan, not LibTorch — so this class stays a stub until then.
+ */
+actual class PyTorchModel actual constructor(context: Any) {
+    init {
+        Logger.debug("PyTorchModel android stub created (server + heuristic paths used)")
+    }
 
     actual fun loadModel(assetName: String) {
-        try {
-            val androidContext = context as Context
-            module = Module.load(assetFilePath(androidContext, assetName))
-        } catch (e: Exception) {
-            // Surface instead of leaving `module` null and failing silently at predict() (#6).
-            throw PyTorchInferenceException("Failed to load model asset '$assetName'", e)
-        }
+        Logger.debug("PyTorchModel.loadModel ignored on android ($assetName — no bundled model)")
     }
 
     actual fun predict(input: FloatArray, inputShape: LongArray): FloatArray {
-        val mod = module
-            ?: throw PyTorchInferenceException("predict() called before a model was loaded")
-        return try {
-            val inputTensor = org.pytorch.Tensor.fromBlob(input, inputShape)
-            val outputTensor = mod.forward(IValue.from(inputTensor)).toTensor()
-            // An empty output is itself a failure, not a valid prediction.
-            outputTensor.dataAsFloatArray.also {
-                if (it.isEmpty()) throw PyTorchInferenceException("Model returned an empty output tensor")
-            }
-        } catch (e: PyTorchInferenceException) {
-            throw e
-        } catch (e: Exception) {
-            throw PyTorchInferenceException("Model forward pass failed", e)
-        }
-    }
-
-    private fun assetFilePath(context: Context, assetName: String): String {
-        val file = File(context.filesDir, assetName)
-        if (file.exists() && file.length() > 0) {
-            return file.absolutePath
-        }
-
-        context.assets.open(assetName).use { `is` ->
-            FileOutputStream(file).use { os ->
-                val buffer = ByteArray(4 * 1024)
-                var read: Int
-                while (`is`.read(buffer).also { read = it } != -1) {
-                    os.write(buffer, 0, read)
-                }
-                os.flush()
-            }
-            return file.absolutePath
-        }
+        return floatArrayOf(0.5f)
     }
 }
