@@ -27,7 +27,11 @@ data class AnalysisUIState(
     val processingTimeMs: Long = 0L,
     val processedImage: ImageBitmap? = null,
     val heatmapImage: ImageBitmap? = null,
-    val detailedFeatures: Map<String, Float> = emptyMap()
+    val detailedFeatures: Map<String, Float> = emptyMap(),
+    // One-line qualifier shown under the verdict: a server abstain reason
+    // ("image too degraded — share the original file"), a provenance match
+    // ("AI generator signature: midjourney"), or a cache note.
+    val detailNote: String? = null
 ) {
     /** Kept for callers that still need the binary collapse. */
     val isAI: Boolean get() = verdict == Verdict.AI
@@ -109,11 +113,70 @@ class AppViewModel(
 
             val startTime = nowMillis()
             try {
+                // Pipeline order per the mid-2026 research doc (§7): cheap and
+                // decisive checks first, the network/model last.
+                val hash = withContext(Dispatchers.Default) { sha256Hex(imageData) }
+
+                // 0. Verdict cache — exact byte hash only (§10). Feeds repeat
+                //    the same media constantly; an identical byte stream gets
+                //    the stored verdict instantly, for free.
+                val cached = historyRepository.getHistory(500)
+                    .firstOrNull { it.sha256 == hash }
+                if (cached != null) {
+                    analysisResult = AnalysisUIState(
+                        verdict = cached.verdictBand,
+                        confidence = cached.confidence,
+                        processingTimeMs = nowMillis() - startTime,
+                        heatmapImage = cached.heatmapBase64
+                            ?.let { HeatmapUtils.decodeHeatmapImage(it) },
+                        detailNote = "Cached result — identical image analyzed ${cached.formattedTime}."
+                    )
+                    return@launch
+                }
+
+                // 1. Provenance/metadata — free byte scan; a generator
+                //    signature (SD/Midjourney EXIF, IPTC trainedAlgorithmicMedia)
+                //    is near-perfect precision, so it decides without a
+                //    network round-trip. Absence proves nothing and falls
+                //    through to the model.
+                val meta = withContext(Dispatchers.Default) {
+                    try {
+                        MetadataAnalyzer.analyze(imageData)
+                    } catch (e: Exception) {
+                        Logger.warn("Metadata scan failed: ${e.message}")
+                        null
+                    }
+                }
+                if (meta?.generatorMatch != null) {
+                    val processingTime = nowMillis() - startTime
+                    analysisResult = AnalysisUIState(
+                        verdict = Verdict.AI,
+                        confidence = 0.95f,
+                        processingTimeMs = processingTime,
+                        detailNote = "AI generator signature in metadata: ${meta.generatorMatch}"
+                    )
+                    historyRepository.addEntry(
+                        AnalysisHistoryEntry(
+                            fileName = fileName,
+                            fileSize = fileSize,
+                            isAI = true,
+                            confidence = 0.95f,
+                            analysisMode = "PROVENANCE",
+                            processingTimeMs = processingTime,
+                            verdict = Verdict.AI.name,
+                            sha256 = hash
+                        )
+                    )
+                    loadHistory()
+                    return@launch
+                }
+
                 val client = apiClient
                 if (client == null) {
                     // Settings not yet loaded / client not built — fall back to the
                     // on-device estimate but say so, don't pretend it's the server.
-                    analyzeWithLocalModel(imageData, fileName, fileSize, offline = true)
+                    analyzeWithLocalModel(imageData, fileName, fileSize, offline = true,
+                                          sha256 = hash)
                     return@launch
                 }
 
@@ -134,7 +197,10 @@ class AppViewModel(
                             confidence = result.uiConfidence,
                             processingTimeMs = processingTime,
                             heatmapImage = result.heatmapBase64
-                                ?.let { HeatmapUtils.decodeHeatmapImage(it) }
+                                ?.let { HeatmapUtils.decodeHeatmapImage(it) },
+                            // Surface the server's qualifier (degradation
+                            // abstain reason / provenance note) honestly.
+                            detailNote = result.detail
                         )
 
                         val entry = AnalysisHistoryEntry(
@@ -145,12 +211,15 @@ class AppViewModel(
                             analysisMode = settings.analysisMode.name,
                             processingTimeMs = processingTime,
                             heatmapBase64 = result.heatmapBase64,
-                            verdict = verdict.name
+                            verdict = verdict.name,
+                            sha256 = hash
                         )
                         historyRepository.addEntry(entry)
                         loadHistory()
                     },
-                    onFailure = { e -> handleAnalyzeFailure(e, imageData, fileName, fileSize) }
+                    onFailure = { e ->
+                        handleAnalyzeFailure(e, imageData, fileName, fileSize, hash)
+                    }
                 )
             } catch (e: Exception) {
                 // Defensive: runAnalyze already wraps failures in Result, so we
@@ -176,6 +245,7 @@ class AppViewModel(
         imageData: ByteArray,
         fileName: String,
         fileSize: Long,
+        sha256: String? = null,
     ) {
         val apiError = (e as? ApiException)?.apiError
         Logger.warn("analyze API failed: ${apiError ?: e.message}")
@@ -185,7 +255,8 @@ class AppViewModel(
             is ApiError.Configuration -> {
                 // Offline-style failure → on-device estimate, clearly marked.
                 errorMessage = apiError.userMessage + " Showing an on-device estimate."
-                analyzeWithLocalModel(imageData, fileName, fileSize, offline = true)
+                analyzeWithLocalModel(imageData, fileName, fileSize, offline = true,
+                                      sha256 = sha256)
             }
             null -> {
                 // Non-ApiException (shouldn't happen) — surface generically.
@@ -209,6 +280,7 @@ class AppViewModel(
         fileName: String,
         fileSize: Long,
         offline: Boolean = false,
+        sha256: String? = null,
     ) {
         try {
             val startTime = nowMillis()
@@ -223,9 +295,13 @@ class AppViewModel(
                 confidence = result.confidence,
                 processingTimeMs = processingTime,
                 processedImage = result.processedImage,
-                detailedFeatures = result.features
+                detailedFeatures = result.features,
+                detailNote = result.explanation.takeIf { it.isNotBlank() }
             )
 
+            // NOTE: deliberately NO sha256 on LOCAL entries — the heuristic is
+            // a weak offline estimate, and caching it under the byte hash
+            // would shadow a proper server verdict for the same image later.
             val entry = AnalysisHistoryEntry(
                 fileName = fileName,
                 fileSize = fileSize,

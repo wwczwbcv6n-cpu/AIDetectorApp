@@ -109,6 +109,16 @@ fun AnalysisScreen(viewModel: AppViewModel) {
                     // "uncertain" band, never a bare binary "FAKE" stamp.
                     VerdictStatusHeader(result.verdict, result.confidence)
 
+                    // Qualifier from the pipeline: server degradation abstain
+                    // ("share the original file"), provenance match, or cache.
+                    result.detailNote?.let { note ->
+                        Text(
+                            note,
+                            style = MaterialTheme.typography.caption,
+                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.75f)
+                        )
+                    }
+
                     Divider()
 
                     // AI-generated probability bar, coloured by the verdict band.

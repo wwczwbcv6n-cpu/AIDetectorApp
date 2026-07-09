@@ -53,6 +53,11 @@ data class ApiAnalysisResult(
     @SerialName("model_type") val modelType: String? = null,
     @SerialName("detector_version") val detectorVersion: String? = null,
     @SerialName("verdict_band") val verdictBand: String? = null,
+    // Human-readable reason when the server abstains or qualifies the call
+    // (e.g. "image looks heavily processed — share the original file").
+    @SerialName("detail") val detail: String? = null,
+    // "content" (model verdict) | "provenance" (signed C2PA/metadata match).
+    @SerialName("method") val method: String? = null,
     @SerialName("error") val error: String? = null,
     @SerialName("error_code") val errorCode: String? = null,
 ) {

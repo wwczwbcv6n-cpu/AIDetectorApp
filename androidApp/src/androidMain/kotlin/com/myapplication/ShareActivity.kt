@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.myapplication.common.MetadataAnalyzer
 import com.myapplication.common.data.ApiAnalysisResult
 import com.myapplication.common.data.ApiClient
 import com.myapplication.common.data.ApiError
@@ -103,7 +104,27 @@ class ShareActivity : ComponentActivity() {
                     if (imageData == null) {
                         Result.failure(ApiException(ApiError.Unknown("Couldn't read the shared image.")))
                     } else {
-                        api!!.analyzeImage(imageData)
+                        // Provenance first (research §7): a generator signature
+                        // in the metadata is near-perfect precision and free —
+                        // decide locally, skip the upload entirely.
+                        val meta = try {
+                            MetadataAnalyzer.analyze(imageData)
+                        } catch (e: Exception) {
+                            null
+                        }
+                        if (meta?.generatorMatch != null) {
+                            Result.success(
+                                ApiAnalysisResult(
+                                    aiProbability = 0.95,
+                                    conclusion = "AI-Generated",
+                                    verdict = "ai",
+                                    detail = "AI generator signature in metadata: ${meta.generatorMatch}",
+                                    method = "provenance",
+                                )
+                            )
+                        } else {
+                            api!!.analyzeImage(imageData)
+                        }
                     }
                 }
                 isLoading = false
@@ -159,6 +180,13 @@ class ShareActivity : ComponentActivity() {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 VerdictStatusHeader(verdict, analysisResult.uiConfidence)
+                analysisResult.detail?.let { note ->
+                    Text(
+                        text = note,
+                        style = MaterialTheme.typography.caption,
+                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.75f)
+                    )
+                }
                 Divider()
                 Text(
                     text = "This is a probabilistic estimate and can be wrong.",

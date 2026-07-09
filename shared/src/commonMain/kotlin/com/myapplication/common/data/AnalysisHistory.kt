@@ -21,7 +21,10 @@ data class AnalysisHistoryEntry(
     // Persisted three-band verdict name ([Verdict.name]). Nullable + defaulted
     // so entries written before the three-band migration still deserialize;
     // when absent we fall back to the [isAI] boolean.
-    val verdict: String? = null
+    val verdict: String? = null,
+    // SHA-256 of the exact analyzed bytes — the verdict-cache key (research
+    // §10: byte hash primary, never a perceptual hash). Null on old entries.
+    val sha256: String? = null
 ) {
     /** The three-band [Verdict], preferring the persisted name over [isAI]. */
     val verdictBand: Verdict
