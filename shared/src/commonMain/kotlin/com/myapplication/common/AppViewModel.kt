@@ -92,8 +92,20 @@ class AppViewModel(
             isLoading = true
             errorMessage = null
             analysisResult = null
-            detectedImage = null
             selectedHistoryEntry = null
+
+            // Show the picked image while (and after) the analysis runs — this
+            // was reset to null and never populated on the server path, so the
+            // "Selected Image" card never appeared. Decode a bounded preview
+            // off the main thread; a decode failure just skips the preview.
+            detectedImage = withContext(Dispatchers.Default) {
+                try {
+                    decodeImage(imageData, maxSide = 512).composeImage
+                } catch (e: Exception) {
+                    Logger.warn("Preview decode failed: ${e.message}")
+                    null
+                }
+            }
 
             val startTime = nowMillis()
             try {
@@ -238,7 +250,16 @@ class AppViewModel(
         coroutineScope.launch {
             settingsRepository.saveSettings(newSettings)
             settings = newSettings
+            // Swap the client, then release the old one — each ApiClient owns
+            // an HttpClient engine; replacing without closing leaked its
+            // connection pool/threads on every settings save.
+            val old = apiClient
             apiClient = ApiClient(newSettings)
+            try {
+                old?.close()
+            } catch (e: Exception) {
+                Logger.warn("Old ApiClient.close() failed: ${e.message}")
+            }
         }
     }
 

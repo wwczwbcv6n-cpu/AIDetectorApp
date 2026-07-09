@@ -5,7 +5,22 @@ import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.asImageBitmap
 
 actual fun decodeImage(bytes: ByteArray, maxSide: Int): DecodedImage {
-    val raw = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    // Bounds-only pass first, then decode subsampled. Decoding a modern
+    // 48–200 MP photo at full resolution allocates a 200 MB+ bitmap just to
+    // immediately downscale it — an OOM crash on mid-range devices. With
+    // inSampleSize the decoder never materialises more than ~4x the target.
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        throw IllegalArgumentException("Failed to decode image")
+    }
+    var sample = 1
+    while (max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) {
+        sample *= 2
+    }
+
+    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+    val raw = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
         ?: throw IllegalArgumentException("Failed to decode image")
     val scale = maxSide.toFloat() / max(raw.width, raw.height)
     val w = (raw.width * scale).toInt().coerceAtLeast(1)

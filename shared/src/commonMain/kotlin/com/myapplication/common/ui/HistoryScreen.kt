@@ -24,6 +24,7 @@ fun HistoryScreen(
     val history = viewModel.analysisHistory
     var searchQuery by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showClearAllDialog by remember { mutableStateOf(false) }
     var selectedForDelete by remember { mutableStateOf<AnalysisHistoryEntry?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -57,7 +58,9 @@ fun HistoryScreen(
         // Clear History Button
         if (history.isNotEmpty()) {
             Button(
-                onClick = { viewModel.clearHistory() },
+                // Deleting the whole history is irreversible — confirm first
+                // (single-entry delete already did; Clear All didn't).
+                onClick = { showClearAllDialog = true },
                 modifier = Modifier
                     .align(Alignment.End)
                     .padding(end = 16.dp),
@@ -97,6 +100,33 @@ fun HistoryScreen(
                 }
             }
         }
+    }
+
+    // Clear-All Confirmation Dialog
+    if (showClearAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearAllDialog = false },
+            title = { Text("Clear All History") },
+            text = { Text("Delete all ${history.size} analysis results? This cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearHistory()
+                        showClearAllDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = MaterialTheme.colors.error
+                    )
+                ) {
+                    Text("Delete All", color = Color.White)
+                }
+            },
+            dismissButton = {
+                Button(onClick = { showClearAllDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     // Delete Confirmation Dialog

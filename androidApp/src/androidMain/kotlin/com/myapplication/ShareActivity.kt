@@ -63,10 +63,15 @@ class ShareActivity : ComponentActivity() {
     }
 
     private fun getUriFromIntent(intent: Intent): Uri? {
-        return if (intent.action == Intent.ACTION_SEND) {
-            (intent.getParcelableExtra<Parcelable>(Intent.EXTRA_STREAM) as? Uri)
+        if (intent.action != Intent.ACTION_SEND) return null
+        // getParcelableExtra(String) is deprecated from API 33; the typed
+        // overload also hardens against a non-Uri extra planted by a
+        // malicious sender (returns null instead of ClassCastException).
+        return if (android.os.Build.VERSION.SDK_INT >= 33) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
         } else {
-            null
+            @Suppress("DEPRECATION")
+            (intent.getParcelableExtra<Parcelable>(Intent.EXTRA_STREAM) as? Uri)
         }
     }
 
