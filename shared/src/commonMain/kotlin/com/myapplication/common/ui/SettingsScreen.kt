@@ -17,7 +17,22 @@ import com.myapplication.common.data.AppSettings
 
 @Composable
 fun SettingsScreen(viewModel: AppViewModel) {
-    var settings by remember { mutableStateOf(viewModel.settings) }
+    // Key the local edit-buffer on viewModel.settings: the ViewModel loads
+    // persisted settings ASYNCHRONOUSLY after startup, so a plain
+    // `remember { ... }` snapshots the blank defaults — the screen then shows
+    // an empty URL even though one is saved, and tapping "Save" writes those
+    // blanks over the user's real configuration. Re-seeding when the loaded
+    // value arrives fixes both.
+    var settings by remember(viewModel.settings) { mutableStateOf(viewModel.settings) }
+    // Numeric fields are string-backed while editing: parsing on every
+    // keystroke with a `?: default` fallback meant clearing the field
+    // instantly snapped it back to the default mid-typing.
+    var timeoutText by remember(viewModel.settings) {
+        mutableStateOf(viewModel.settings.apiTimeout.toString())
+    }
+    var cacheCountText by remember(viewModel.settings) {
+        mutableStateOf(viewModel.settings.cacheResultsCount.toString())
+    }
     val isSaving = remember { mutableStateOf(false) }
 
     Column(
@@ -63,12 +78,14 @@ fun SettingsScreen(viewModel: AppViewModel) {
         )
 
         OutlinedTextField(
-            value = settings.apiTimeout.toString(),
-            onValueChange = {
-                settings = settings.copy(apiTimeout = it.toLongOrNull() ?: 30000L)
+            value = timeoutText,
+            onValueChange = { text ->
+                timeoutText = text
+                text.toLongOrNull()?.let { settings = settings.copy(apiTimeout = it) }
             },
             label = { Text("Timeout (ms)") },
             modifier = Modifier.fillMaxWidth(),
+            isError = timeoutText.toLongOrNull() == null,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
         )
 
@@ -160,12 +177,14 @@ fun SettingsScreen(viewModel: AppViewModel) {
         Text("Cache Settings", style = MaterialTheme.typography.h6)
 
         OutlinedTextField(
-            value = settings.cacheResultsCount.toString(),
-            onValueChange = {
-                settings = settings.copy(cacheResultsCount = it.toIntOrNull() ?: 100)
+            value = cacheCountText,
+            onValueChange = { text ->
+                cacheCountText = text
+                text.toIntOrNull()?.let { settings = settings.copy(cacheResultsCount = it) }
             },
             label = { Text("Max History Entries") },
             modifier = Modifier.fillMaxWidth(),
+            isError = cacheCountText.toIntOrNull() == null,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
         )
 
@@ -202,7 +221,10 @@ fun SettingsScreen(viewModel: AppViewModel) {
         }
 
         if (isSaving.value) {
+            // Keep the confirmation on screen briefly — resetting on the very
+            // next frame made it flash for ~one frame (effectively invisible).
             LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(1500)
                 isSaving.value = false
             }
             Snackbar(
