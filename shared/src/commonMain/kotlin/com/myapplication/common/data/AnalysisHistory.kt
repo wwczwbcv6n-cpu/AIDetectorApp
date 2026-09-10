@@ -6,6 +6,15 @@ import com.myapplication.common.nowMillis
 import kotlinx.serialization.Serializable
 import kotlin.random.Random
 
+/**
+ * One persisted history row. Deliberately holds NO image derivative: the
+ * server heatmap (a rendering of the user's photo) used to be stored here as
+ * `heatmapBase64`, which turned "local history" into a stored copy of the
+ * media (flagged by the 2026-09 privacy review). It now lives only in the
+ * ViewModel for the current session. Old rows that still carry the field are
+ * dropped on read (`ignoreUnknownKeys`) and rewritten without it by every
+ * repository — see `LEGACY_HEATMAP_FIELD`.
+ */
 @Serializable
 data class AnalysisHistoryEntry(
     val id: String = Random.nextLong().toString(),
@@ -16,7 +25,6 @@ data class AnalysisHistoryEntry(
     val confidence: Float,
     val analysisMode: String,
     val processingTimeMs: Long,
-    val heatmapBase64: String? = null,
     val notes: String = "",
     // Persisted three-band verdict name ([Verdict.name]). Nullable + defaulted
     // so entries written before the three-band migration still deserialize;
@@ -48,6 +56,12 @@ data class AnalysisHistoryEntry(
             Verdict.TAMPERED -> "Possibly edited"
         }
 }
+
+/**
+ * Marker every repository looks for in the raw stored JSON: if present, the
+ * store predates the heatmap purge and is rewritten once without the field.
+ */
+const val LEGACY_HEATMAP_FIELD: String = "\"heatmapBase64\""
 
 expect class AnalysisHistoryRepository {
     suspend fun addEntry(entry: AnalysisHistoryEntry)

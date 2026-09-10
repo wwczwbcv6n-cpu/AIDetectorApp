@@ -3,6 +3,7 @@ package com.myapplication.common.data
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.myapplication.common.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -28,13 +29,22 @@ actual class AnalysisHistoryRepository(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
     private val historyKey = "analysis_history"
 
-    /** Non-suspending read for internal reuse; callers already on IO. */
+    /**
+     * Non-suspending read for internal reuse; callers already on IO.
+     *
+     * Migration: rows written before the heatmap purge carry `heatmapBase64`
+     * (a rendering of the user's photo). `ignoreUnknownKeys` drops it on
+     * decode and the store is rewritten once so the bytes leave the disk.
+     * Failures log the exception TYPE only — kotlinx messages quote the JSON.
+     */
     private fun readAll(): List<AnalysisHistoryEntry> {
         return try {
             val jsonString = prefs.getString(historyKey, null) ?: return emptyList()
-            json.decodeFromString(jsonString)
+            val entries: List<AnalysisHistoryEntry> = json.decodeFromString(jsonString)
+            if (jsonString.contains(LEGACY_HEATMAP_FIELD)) writeAll(entries)
+            entries
         } catch (e: Exception) {
-            e.printStackTrace()
+            Logger.warn("history read failed: ${e::class.simpleName}")
             emptyList()
         }
     }
@@ -43,7 +53,7 @@ actual class AnalysisHistoryRepository(private val context: Context) {
         try {
             prefs.edit().putString(historyKey, json.encodeToString(entries)).apply()
         } catch (e: Exception) {
-            e.printStackTrace()
+            Logger.warn("history write failed: ${e::class.simpleName}")
         }
     }
 

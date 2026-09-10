@@ -52,6 +52,11 @@ kotlin {
                 // Security/Encryption
                 implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+                // TSE2 envelope: HPKE (RFC 9180) via BouncyCastle's LIGHTWEIGHT API
+                // (org.bouncycastle.crypto.hpke). Platform "XDH" exists only on
+                // API 33+ and minSdk is 24. The provider is deliberately NOT registered.
+                implementation("org.bouncycastle:bcprov-jdk18on:1.85.2")
+
                 // NOTE: org.pytorch:pytorch_android deliberately REMOVED — the
                 // on-device model path was never invoked, yet its native libs
                 // (4 ABIs) + bundled .ptl asset were ~350 MB of the APK. The
@@ -83,6 +88,19 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.7.3")
                 // Ktor JVM engine — Android has OkHttp, iOS has Darwin, desktop needs CIO.
                 implementation("io.ktor:ktor-client-cio:$ktorVersion")
+                // TSE2 envelope: the same BouncyCastle lightweight HPKE as Android.
+                implementation("org.bouncycastle:bcprov-jdk18on:1.85.2")
+            }
+        }
+        val desktopTest by getting {
+            dependencies {
+                // Envelope conformance tests: RFC 9180 A.1 through BC, TSE2 framing
+                // round-trip, secure/vectors.json, attestation verifier, ApiClient
+                // against a mock server. Run: ./gradlew :shared:desktopTest
+                implementation(kotlin("test"))
+                implementation(kotlin("test-junit"))
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+                implementation("io.ktor:ktor-client-mock:$ktorVersion")
             }
         }
     }

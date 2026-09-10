@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup rules for API < 31 (android:fullBackupContent). Exclude every
+  data domain: the encrypted prefs (ai_detector_history / ai_detector_settings
+  + the androidx.security keyset prefs), any files and databases. The app
+  stores no user media, but it stores verdict rows and the API key, and they
+  are not to leave the device. See data_extraction_rules.xml for API 31+.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="external" path="." />
+    <exclude domain="root" path="." />
+</full-backup-content>

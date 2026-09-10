@@ -16,6 +16,35 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myapplication.common.AppViewModel
 import com.myapplication.common.ImagePickerFactory
+import com.myapplication.common.secure.TierState
+
+/**
+ * The one tier line every client must show (SPEC §6). The copy comes from
+ * [TierState.userLine] and is deliberately literal: the standard tier says
+ * the operator and its host can technically read the file; only a VERIFIED
+ * measurement earns anything stronger, and FAILED says nothing was sent.
+ */
+@Composable
+private fun TierStateLine(state: TierState) {
+    val background = when (state) {
+        is TierState.Verified -> Color(0xFFE0FFE0)
+        TierState.Unattested -> Color(0xFFFFF4D6)
+        is TierState.Failed -> Color(0xFFFFE0E0)
+    }
+    val foreground = when (state) {
+        is TierState.Verified -> Color(0xFF1B5E20)
+        TierState.Unattested -> Color(0xFF7A4F00)
+        is TierState.Failed -> Color(0xFFCC0000)
+    }
+    Card(modifier = Modifier.fillMaxWidth(), backgroundColor = background) {
+        Text(
+            state.userLine,
+            modifier = Modifier.padding(12.dp),
+            style = MaterialTheme.typography.caption,
+            color = foreground
+        )
+    }
+}
 
 @Composable
 fun AnalysisScreen(viewModel: AppViewModel) {
@@ -32,6 +61,9 @@ fun AnalysisScreen(viewModel: AppViewModel) {
     ) {
         // Header
         Text("AI Image Detector", style = MaterialTheme.typography.h4)
+
+        // Which tier the last upload went to — verified / standard / failed.
+        viewModel.tierState?.let { TierStateLine(it) }
 
         // Image Picker Button — disabled while a request is in flight (#5) so a
         // double-tap can't enqueue a second overlapping analysis. The ViewModel

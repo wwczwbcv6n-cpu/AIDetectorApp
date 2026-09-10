@@ -14,6 +14,7 @@ import com.myapplication.common.data.SettingsRepository
 import com.myapplication.common.data.HeatmapUtils
 import com.myapplication.common.data.Verdict
 import com.myapplication.common.nowMillis
+import com.myapplication.common.secure.TierState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -50,6 +51,13 @@ class AppViewModel(
     var analysisHistory by mutableStateOf<List<AnalysisHistoryEntry>>(emptyList())
     var selectedHistoryEntry by mutableStateOf<AnalysisHistoryEntry?>(null)
 
+    /**
+     * The tier the LAST upload was classified into (SPEC §6) — exactly one of
+     * verified / unattested / failed, or null before the first upload. The
+     * analysis screen renders [TierState.userLine] verbatim.
+     */
+    var tierState by mutableStateOf<TierState?>(null)
+
     private val heuristicDetector = HeuristicAIDetector()
     // Compose's Snapshot system rejects mutableStateOf writes from background
     // dispatchers when the state was created on Main. We launch on Main and
@@ -58,11 +66,19 @@ class AppViewModel(
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var apiClient: ApiClient? = null
 
+    /**
+     * Server heatmaps for THIS SESSION ONLY, keyed by history entry id. They
+     * are a rendering of the user's photo and are deliberately never
+     * persisted (see [AnalysisHistoryEntry]); reopening the app shows the
+     * verdict without the heatmap.
+     */
+    private val sessionHeatmaps = HashMap<String, ImageBitmap>()
+
     init {
         coroutineScope.launch {
             try {
                 settings = settingsRepository.getSettings()
-                apiClient = ApiClient(settings)
+                apiClient = buildClient(settings)
                 loadHistory()
             } catch (e: Exception) {
                 Logger.error("AppViewModel initialization failed", e)
@@ -70,6 +86,12 @@ class AppViewModel(
             }
         }
     }
+
+    /** One ApiClient per settings snapshot; its tier callback feeds [tierState]. */
+    private fun buildClient(forSettings: AppSettings): ApiClient =
+        ApiClient(forSettings).also { client ->
+            client.onTierState = { state -> tierState = state }
+        }
 
     /**
      * Must be called when the host Activity/Composable is destroyed to release
@@ -82,6 +104,7 @@ class AppViewModel(
             Logger.warn("ApiClient.close() failed: ${e.message}")
         }
         apiClient = null
+        sessionHeatmaps.clear()
         coroutineScope.cancel()
     }
 
@@ -119,7 +142,8 @@ class AppViewModel(
 
                 // 0. Verdict cache — exact byte hash only (§10). Feeds repeat
                 //    the same media constantly; an identical byte stream gets
-                //    the stored verdict instantly, for free.
+                //    the stored verdict instantly, for free. The hash stays on
+                //    this device (it is never logged or sent).
                 val cached = historyRepository.getHistory(500)
                     .firstOrNull { it.sha256 == hash }
                 if (cached != null) {
@@ -127,8 +151,7 @@ class AppViewModel(
                         verdict = cached.verdictBand,
                         confidence = cached.confidence,
                         processingTimeMs = nowMillis() - startTime,
-                        heatmapImage = cached.heatmapBase64
-                            ?.let { HeatmapUtils.decodeHeatmapImage(it) },
+                        heatmapImage = sessionHeatmaps[cached.id],
                         detailNote = "Cached result — identical image analyzed ${cached.formattedTime}."
                     )
                     return@launch
@@ -180,7 +203,10 @@ class AppViewModel(
                     return@launch
                 }
 
-                // Try the server first.
+                // 2. The server, through the sealed TSE2 envelope. The client
+                //    classifies the tier first (tierState updates through the
+                //    callback) and refuses to send on FAILED, or on UNATTESTED
+                //    when the user required attestation.
                 val apiResult = if (settings.enableHeatmap) {
                     client.analyzeImageWithHeatmap(imageData)
                 } else {
@@ -192,17 +218,6 @@ class AppViewModel(
                         val processingTime = nowMillis() - startTime
                         val verdict = result.toVerdict(settings.confidenceThreshold)
 
-                        analysisResult = AnalysisUIState(
-                            verdict = verdict,
-                            confidence = result.uiConfidence,
-                            processingTimeMs = processingTime,
-                            heatmapImage = result.heatmapBase64
-                                ?.let { HeatmapUtils.decodeHeatmapImage(it) },
-                            // Surface the server's qualifier (degradation
-                            // abstain reason / provenance note) honestly.
-                            detailNote = result.detail
-                        )
-
                         val entry = AnalysisHistoryEntry(
                             fileName = fileName,
                             fileSize = fileSize,
@@ -210,10 +225,23 @@ class AppViewModel(
                             confidence = result.uiConfidence,
                             analysisMode = settings.analysisMode.name,
                             processingTimeMs = processingTime,
-                            heatmapBase64 = result.heatmapBase64,
                             verdict = verdict.name,
                             sha256 = hash
                         )
+                        // Heatmap: session memory only, never persisted.
+                        val heatmap = result.heatmapBase64?.let { HeatmapUtils.decodeHeatmapImage(it) }
+                        if (heatmap != null) sessionHeatmaps[entry.id] = heatmap
+
+                        analysisResult = AnalysisUIState(
+                            verdict = verdict,
+                            confidence = result.uiConfidence,
+                            processingTimeMs = processingTime,
+                            heatmapImage = heatmap,
+                            // Surface the server's qualifier (degradation
+                            // abstain reason / provenance note) honestly.
+                            detailNote = result.detail
+                        )
+
                         historyRepository.addEntry(entry)
                         loadHistory()
                     },
@@ -239,6 +267,12 @@ class AppViewModel(
      * never silently substituted for the server's verdict. Auth / parse / server
      * errors do NOT fall back: hiding them behind the heuristic is what made the
      * server look like it "worked" while never being used.
+     *
+     * Attestation / envelope errors ([ApiError.Attestation],
+     * [ApiError.AttestationRequired], [ApiError.Protocol], ...) are shown as
+     * they are: nothing was sent (or nothing was decoded), and no fallback
+     * runs — the user asked for a server verdict under a stated tier and did
+     * not get one.
      */
     private suspend fun handleAnalyzeFailure(
         e: Throwable,
@@ -248,7 +282,8 @@ class AppViewModel(
         sha256: String? = null,
     ) {
         val apiError = (e as? ApiException)?.apiError
-        Logger.warn("analyze API failed: ${apiError ?: e.message}")
+        // Type only — never the message, which can echo server strings.
+        Logger.warn("analyze API failed: ${apiError?.let { it::class.simpleName } ?: e::class.simpleName}")
         when (apiError) {
             is ApiError.Network,
             is ApiError.Timeout,
@@ -263,7 +298,8 @@ class AppViewModel(
                 errorMessage = "Analysis failed: ${e.message ?: "unknown error"}"
             }
             else -> {
-                // Auth / ClientError / ServerError / Parse / Unknown — show it.
+                // Auth / ClientError / ServerError / Parse / Unknown /
+                // Attestation* / StaleTimestamp / KeyRotation / Protocol / Envelope — show it.
                 errorMessage = apiError.userMessage
             }
         }
@@ -330,7 +366,7 @@ class AppViewModel(
             // an HttpClient engine; replacing without closing leaked its
             // connection pool/threads on every settings save.
             val old = apiClient
-            apiClient = ApiClient(newSettings)
+            apiClient = buildClient(newSettings)
             try {
                 old?.close()
             } catch (e: Exception) {
@@ -348,6 +384,7 @@ class AppViewModel(
     fun deleteHistoryEntry(id: String) {
         coroutineScope.launch {
             historyRepository.deleteEntry(id)
+            sessionHeatmaps.remove(id)
             loadHistory()
         }
     }
@@ -355,6 +392,7 @@ class AppViewModel(
     fun clearHistory() {
         coroutineScope.launch {
             historyRepository.clearHistory()
+            sessionHeatmaps.clear()
             loadHistory()
         }
     }
@@ -371,7 +409,7 @@ class AppViewModel(
             verdict = entry.verdictBand,
             confidence = entry.confidence,
             processingTimeMs = entry.processingTimeMs,
-            heatmapImage = entry.heatmapBase64?.let { HeatmapUtils.decodeHeatmapImage(it) }
+            heatmapImage = sessionHeatmaps[entry.id]
         )
     }
 

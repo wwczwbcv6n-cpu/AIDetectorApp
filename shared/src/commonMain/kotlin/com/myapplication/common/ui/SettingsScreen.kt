@@ -141,6 +141,35 @@ fun SettingsScreen(viewModel: AppViewModel) {
 
         Divider()
 
+        // Privacy tier (SPEC §6). Default off = standard tier allowed, with the
+        // honest sentence shown on the analysis screen; on = fail closed unless
+        // the server's evidence verifies against the pinned policy.
+        Text("Privacy", style = MaterialTheme.typography.h6)
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Checkbox(
+                checked = settings.requireAttestation,
+                onCheckedChange = { settings = settings.copy(requireAttestation = it) }
+            )
+            Text("Require the attested tier")
+        }
+        Text(
+            if (settings.requireAttestation) {
+                "Uploads happen only after the server proves a pinned software measurement " +
+                    "(hardware-attested). If it cannot, nothing is sent."
+            } else {
+                "Standard tier allowed: Tayanch and its hosting provider can technically " +
+                    "read this file during analysis. Turn on to refuse that."
+            },
+            style = MaterialTheme.typography.caption,
+            color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
+        )
+
+        Divider()
+
         // Analysis Mode Selection
         Text("Analysis Mode", style = MaterialTheme.typography.h6)
 

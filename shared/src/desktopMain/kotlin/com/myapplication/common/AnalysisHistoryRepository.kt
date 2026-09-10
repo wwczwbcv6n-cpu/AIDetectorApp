@@ -1,5 +1,6 @@
 package com.myapplication.common.data
 
+import com.myapplication.common.Logger
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
@@ -33,14 +34,21 @@ actual class AnalysisHistoryRepository {
         }
     }
 
+    /**
+     * Migration: rows written before the heatmap purge carry `heatmapBase64`
+     * (a rendering of the user's photo). `ignoreUnknownKeys` drops it on
+     * decode and the file is rewritten once so the bytes leave the disk.
+     */
     actual suspend fun getHistory(limit: Int): List<AnalysisHistoryEntry> {
         return try {
             if (!historyFile.exists()) return emptyList()
             val content = historyFile.readText()
             val all: List<AnalysisHistoryEntry> = json.decodeFromString(content)
+            if (content.contains(LEGACY_HEATMAP_FIELD)) historyFile.writeText(json.encodeToString(all))
             all.take(limit)
         } catch (e: Exception) {
-            e.printStackTrace()
+            // Type only — kotlinx decode errors quote the stored JSON.
+            Logger.warn("history read failed: ${e::class.simpleName}")
             emptyList()
         }
     }

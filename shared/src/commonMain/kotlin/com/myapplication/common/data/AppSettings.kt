@@ -14,6 +14,13 @@ import kotlinx.serialization.Serializable
  * /finetune); for /analyze it's optional but recommended so the
  * server's rate limiter identifies your traffic instead of bucketing
  * you with everyone else on the same egress IP.
+ *
+ * `requireAttestation` (default false): when true the upload proceeds only
+ * if the server's `/pubkey` evidence VERIFIES against the pinned policy;
+ * an UNATTESTED (standard-tier) server is a hard stop. When false the
+ * standard tier is allowed and the UI shows the sentence "Standard tier:
+ * Tayanch and its hosting provider can technically read this file during
+ * analysis." A FAILED classification stops the upload in either mode.
  */
 @Serializable
 data class AppSettings(
@@ -24,7 +31,8 @@ data class AppSettings(
     val enableHeatmap: Boolean = true,
     val enableLogging: Boolean = false,
     val analysisMode: AnalysisMode = AnalysisMode.FAST,
-    val cacheResultsCount: Int = 100
+    val cacheResultsCount: Int = 100,
+    val requireAttestation: Boolean = false,
 ) {
     enum class AnalysisMode {
         FAST,      // Quick analysis
