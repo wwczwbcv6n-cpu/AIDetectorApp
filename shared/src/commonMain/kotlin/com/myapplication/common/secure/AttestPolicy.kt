@@ -34,7 +34,7 @@ object AttestPolicy {
      * (`{"audience": ...}` on /run/container_launcher/teeserver.sock). Must not
      * be the default `https://sts.googleapis.com` (research: default WIF aud).
      */
-    const val AUDIENCE = "https://tayanch.com/attest/v2"
+    const val AUDIENCE = "https://tayanch.com/attest"
 
     /** Only RS256 is advertised by the issuer; anything else is rejected. */
     const val ALG = "RS256"
