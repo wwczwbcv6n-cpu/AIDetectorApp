@@ -32,7 +32,9 @@ kotlin {
                 implementation(compose.components.resources)
 
                 // Ktor for networking
-                implementation("io.ktor:ktor-client-core:$ktorVersion")
+                // api, not implementation: ApiClient's public constructor takes an
+                // HttpClientEngine?, so consumers (androidApp) must see the type.
+                api("io.ktor:ktor-client-core:$ktorVersion")
                 implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
                 implementation("io.ktor:ktor-serialization-kotlinx-json:$ktorVersion")
 
