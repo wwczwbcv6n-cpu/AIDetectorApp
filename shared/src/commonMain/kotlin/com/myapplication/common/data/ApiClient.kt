@@ -27,66 +27,116 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
- * Wire DTO for the server's `POST /analyze` JSON response.
+ * `POST /analyze` -> `degradation`: how "laundered" the upload looked
+ * (screenshot geometry, messenger-grade recompression, stripped EXIF).
+ * Content path only; absent on the provenance path.
+ */
+@Serializable
+data class ApiDegradation(
+    @SerialName("level") val level: String? = null,          // "none" | "moderate" | "heavy"
+    @SerialName("reasons") val reasons: List<String>? = null,
+)
+
+/**
+ * `POST /analyze` -> `localized_edit`: the additive edit screen — a FLAG for
+ * review, never an accusation (it demotes real -> uncertain only). Present only
+ * when the screen ran; `localized` only when it fired. Extra server keys
+ * (`edited_score`, `mask_area`, `bbox`, `clean_fpr`) are ignored.
+ */
+@Serializable
+data class ApiLocalizedEdit(
+    @SerialName("fires") val fires: Boolean? = null,
+    @SerialName("localized") val localized: Boolean? = null,   // true: POST /heatmap has a region to show
+    @SerialName("score") val score: Double? = null,
+    @SerialName("thr") val thr: Double? = null,
+)
+
+/**
+ * Wire DTO for the served `POST /analyze` JSON response (`demo_api.py`, the
+ * Tayanch API). The key set is pinned by the parent repo's
+ * `contract/api_v2.json`; `tests/test_client_contract.py` there asserts that
+ * every key this class reads is one the server actually sends.
  *
- * IMPORTANT: the field names here MUST match `server.py::_run_analysis` /
- * `_run_analysis_v2`. The previous version of this class used invented keys
- * (`isAI`, `confidence`, `heatmap`, `detailedFeatures`) that the server never
- * emits, so kotlinx.serialization threw `MissingFieldException` on EVERY
- * response — which `analyzeImage` swallowed into `Result.failure`, silently
- * dropping the app onto the local heuristic. The server never got used.
+ * History: the previous version read six keys of the legacy `server.py`
+ * schema (an inline base64 heat map, an inference-time field, a model-type /
+ * detector-version pair, a verdict band and an error code) that the served
+ * API never emits (audit 2026-09-18, site_app.md §2 bug 1). With
+ * `ignoreUnknownKeys` they decoded silently to null, so the model name, the
+ * timing and the heat map were always empty in the app.
  *
- * Server schema (see server.py docstring on `/analyze` + the result dicts):
- *   ai_probability   Double? [0-1]   — calibrated P(AI); null on a bad-image error path
- *   conclusion       String?         — "AI-Generated" | "REAL" | null
- *   verdict          String?         — "ai" | "real" | "uncertain" | "tampered" | "error"
- *   confidence       Double?         — additive v2 field; may be absent on legacy backend
- *   heatmap_base64   String?         — base64 PNG, or null
- *   inference_ms     Double?
- *   model_type       String?
- *   detector_version String?
- *   error            String?         — present only on the graceful error schema
- *   error_code       String?
+ * Served schema (variants "200 content", "200 content+edit_screen",
+ * "200 provenance"; a 400 carries only `error`):
+ *   verdict              String   "ai" | "real" | "uncertain" — the 3-band source of truth
+ *   label                String   "Likely AI-generated" / "Uncertain — possible local edit" / ...
+ *   confidence           Number   0..100 PERCENT on the site's scale (NOT a probability;
+ *                                 for a "real" verdict it is confidence in REAL); 0 on uncertain
+ *   p_ai                 Number   0..1 calibrated P(AI)
+ *   ai_probability       Number   alias of p_ai, emitted for this DTO
+ *   conclusion           String   "AI-Generated" | "REAL" | "UNCERTAIN"
+ *   detail               String?  abstain reason / edit note / provenance note, or null
+ *   method               String   "content" | "provenance"
+ *   model                String   name of the served head
+ *   elapsed_ms           Integer  server-side wall time in ms
+ *   heatmap_token        String   opaque, short-lived; presented back to POST /heatmap
+ *   preview              String?  data-URL thumbnail (dropped when the client sends preview=0)
+ *   degradation          Object?  [ApiDegradation] — content path only
+ *   localized_edit       Object?  [ApiLocalizedEdit] — only when the edit screen ran
+ *   provenance_kind      String?  "c2pa_manifest" | "metadata_tag" — provenance path only
+ *   provenance_verified  Boolean? false: the marker was detected, no signature was validated
+ *   error                String?  the graceful error body ("no_file")
  *
- * Every field is nullable with a default so a partial or legacy-backend
- * payload still deserializes instead of throwing. We then project to the
- * UI-friendly [isAI] / [uiConfidence] in code, where we control the fallbacks.
+ * Every field is nullable with a default so an optional-key or partial body
+ * still decodes, and the client's Json keeps `ignoreUnknownKeys = true` so
+ * keys the server adds later (`union_candidate`, `feature_mode`, `degraded`,
+ * ...) never crash the app. [isAI] / [uiConfidence] are projected in code.
  *
  * Since TSE2 this JSON arrives INSIDE the sealed response envelope
  * (`application/vnd.tayanch.secure+v2`); the fields are unchanged.
+ *
+ * HEAT MAP: /analyze never inlines one. It is a SECOND sealed call,
+ * `POST /heatmap` — multipart with the image envelope plus the form fields
+ * `token` = [heatmapToken], `gate` (0..1 overlay strength) and optionally
+ * `verdict` / `p_ai` — answering `{heatmap: data-URL | null, zoom?, method,
+ * gate?, reason?, error?}` (410 `token_expired` when the token lapsed). That is
+ * what site/demo.js `addHeatmapRow()` does; the app does not wire it yet.
  */
 @Serializable
 data class ApiAnalysisResult(
+    @SerialName("verdict") val verdict: String? = null,
+    @SerialName("label") val label: String? = null,
+    @SerialName("confidence") val confidence: Double? = null,
+    @SerialName("p_ai") val pAi: Double? = null,
     @SerialName("ai_probability") val aiProbability: Double? = null,
     @SerialName("conclusion") val conclusion: String? = null,
-    @SerialName("verdict") val verdict: String? = null,
-    @SerialName("confidence") val confidence: Double? = null,
-    @SerialName("heatmap_base64") val heatmapBase64: String? = null,
-    @SerialName("inference_ms") val inferenceMs: Double? = null,
-    @SerialName("model_type") val modelType: String? = null,
-    @SerialName("detector_version") val detectorVersion: String? = null,
-    @SerialName("verdict_band") val verdictBand: String? = null,
     // Human-readable reason when the server abstains or qualifies the call
     // (e.g. "image looks heavily processed — share the original file").
     @SerialName("detail") val detail: String? = null,
     // "content" (model verdict) | "provenance" (signed C2PA/metadata match).
     @SerialName("method") val method: String? = null,
+    @SerialName("model") val model: String? = null,
+    @SerialName("elapsed_ms") val elapsedMs: Long? = null,
+    @SerialName("heatmap_token") val heatmapToken: String? = null,
+    @SerialName("preview") val preview: String? = null,
+    @SerialName("degradation") val degradation: ApiDegradation? = null,
+    @SerialName("localized_edit") val localizedEdit: ApiLocalizedEdit? = null,
+    @SerialName("provenance_kind") val provenanceKind: String? = null,
+    @SerialName("provenance_verified") val provenanceVerified: Boolean? = null,
     @SerialName("error") val error: String? = null,
-    @SerialName("error_code") val errorCode: String? = null,
 ) {
     /**
      * The calibrated three-band verdict for the UI. Trusts the server's own
-     * 3-way `verdict` ("ai"/"real"/"uncertain"/"tampered"); falls back to
+     * 3-way `verdict` ("ai"/"real"/"uncertain"); falls back to
      * `conclusion` / `ai_probability` (with an uncertain band around
-     * [threshold]) only for a legacy backend that doesn't emit `verdict`.
+     * [threshold]) only for a backend that doesn't emit `verdict`.
      * This is what keeps an "uncertain" server call from becoming a false
      * accusation in the app.
      */
     fun toVerdict(threshold: Float = 0.5f): Verdict =
-        Verdict.fromServer(verdict, conclusion, aiProbability, threshold)
+        Verdict.fromServer(verdict, conclusion, aiProbability ?: pAi, threshold)
+
     /**
      * Binary AI/real call for the UI. Trusts the server's own collapse:
-     * `conclusion == "AI-Generated"` (which the v2 backend only emits when
+     * `conclusion == "AI-Generated"` (which the backend only emits when
      * verdict=="ai", so an "uncertain" never becomes a false accusation).
      * Falls back to `verdict` when `conclusion` is absent.
      */
@@ -98,12 +148,21 @@ data class ApiAnalysisResult(
         }
 
     /**
-     * 0..1 score for the confidence bar. The server's `ai_probability` is the
-     * meaningful number; the additive `confidence` field is informational and
-     * not always present, so we drive the bar from `ai_probability`.
+     * 0..1 P(AI) for the confidence bar: `ai_probability` (alias of `p_ai`).
+     * `confidence` is deliberately NOT a fallback — it is a 0..100 percent on
+     * the site's scale and, for a "real" verdict, confidence in REAL; clamping
+     * it into 0..1 would paint every real photo as 100% AI.
      */
     val uiConfidence: Float
-        get() = (aiProbability ?: confidence ?: 0.0).toFloat().coerceIn(0f, 1f)
+        get() = (aiProbability ?: pAi ?: 0.0).toFloat().coerceIn(0f, 1f)
+
+    /**
+     * The edit screen flagged a possible local edit AND the localizer found a
+     * region, i.e. POST /heatmap has an "area to check" to show. Mirrors
+     * site/demo.js: `localized_edit.fires && localized_edit.localized === true`.
+     */
+    val editLocalized: Boolean
+        get() = localizedEdit?.fires == true && localizedEdit?.localized == true
 
     /** True when the server returned its graceful error schema (bad/corrupt image, etc.). */
     val isServerError: Boolean
@@ -262,14 +321,14 @@ class ApiClient(
         }
     )
 
+    /**
+     * Sealed POST /analyze. There is no `?heatmap=` variant any more: the served
+     * API ignored that query parameter and never inlines a heat map — the map
+     * is a second sealed call to POST /heatmap with the returned
+     * [ApiAnalysisResult.heatmapToken] (see the DTO doc; not wired yet).
+     */
     suspend fun analyzeImage(imageData: ByteArray): Result<ApiAnalysisResult> =
-        runAnalyze(imageData, includeHeatmap = null)
-
-    suspend fun analyzeImageWithHeatmap(
-        imageData: ByteArray,
-        includeHeatmap: Boolean = true
-    ): Result<ApiAnalysisResult> =
-        runAnalyze(imageData, includeHeatmap = includeHeatmap)
+        runAnalyze(imageData)
 
     /**
      * Shared sealed POST /analyze path. Captures the [HttpResponse] (rather than
@@ -277,10 +336,7 @@ class ApiClient(
      * is opened ONLY on a 2xx with the sealed content type. On any failure
      * returns `Result.failure(ApiException(...))`.
      */
-    private suspend fun runAnalyze(
-        imageData: ByteArray,
-        includeHeatmap: Boolean?,
-    ): Result<ApiAnalysisResult> {
+    private suspend fun runAnalyze(imageData: ByteArray): Result<ApiAnalysisResult> {
         // Configuration errors are deterministic and worth surfacing precisely.
         try {
             ensureUrl()
@@ -291,7 +347,7 @@ class ApiClient(
         }
 
         return try {
-            analyzeSealed(imageData, includeHeatmap)
+            analyzeSealed(imageData)
         } catch (e: HttpRequestTimeoutException) {
             Result.failure(ApiException(ApiError.Timeout))
         } catch (e: IOException) {
@@ -304,7 +360,7 @@ class ApiClient(
         }
     }
 
-    private suspend fun analyzeSealed(imageData: ByteArray, includeHeatmap: Boolean?): Result<ApiAnalysisResult> {
+    private suspend fun analyzeSealed(imageData: ByteArray): Result<ApiAnalysisResult> {
         // 1. Fresh key + evidence bound to a fresh 32-byte nonce, fetched immediately
         //    before the upload (SPEC §5). The same nonce goes in X-Tayanch-Nonce so a
         //    409 body can carry evidence bound to it.
@@ -331,7 +387,8 @@ class ApiClient(
                     accept(ContentType.parse(SECURE_V2))
                     accept(ContentType.Application.Json)
                     timeout { requestTimeoutMillis = settings.apiTimeout }
-                    if (includeHeatmap != null) parameter("heatmap", includeHeatmap)
+                    // No query string: the route in the envelope AAD is the bare
+                    // path (SPEC §2), and the server reads no /analyze query params.
                     setBody(envelopePart(sealed.envelope))
                 }
                 val status = response.status.value

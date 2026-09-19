@@ -11,7 +11,6 @@ import com.myapplication.common.data.ApiError
 import com.myapplication.common.data.ApiException
 import com.myapplication.common.data.AppSettings
 import com.myapplication.common.data.SettingsRepository
-import com.myapplication.common.data.HeatmapUtils
 import com.myapplication.common.data.Verdict
 import com.myapplication.common.nowMillis
 import com.myapplication.common.secure.TierState
@@ -207,11 +206,10 @@ class AppViewModel(
                 //    classifies the tier first (tierState updates through the
                 //    callback) and refuses to send on FAILED, or on UNATTESTED
                 //    when the user required attestation.
-                val apiResult = if (settings.enableHeatmap) {
-                    client.analyzeImageWithHeatmap(imageData)
-                } else {
-                    client.analyzeImage(imageData)
-                }
+                //    (`settings.enableHeatmap` no longer changes this request: the
+                //    served API ignored `?heatmap=`. It is reserved for the second
+                //    sealed POST /heatmap call — see below.)
+                val apiResult = client.analyzeImage(imageData)
 
                 apiResult.fold(
                     onSuccess = { result ->
@@ -228,18 +226,25 @@ class AppViewModel(
                             verdict = verdict.name,
                             sha256 = hash
                         )
-                        // Heatmap: session memory only, never persisted.
-                        val heatmap = result.heatmapBase64?.let { HeatmapUtils.decodeHeatmapImage(it) }
-                        if (heatmap != null) sessionHeatmaps[entry.id] = heatmap
-
+                        // Heat map: /analyze never inlines one (the old inline
+                        // base64 field was never served). It is a
+                        // second sealed call — POST /heatmap with
+                        // `token` = result.heatmapToken, exactly as
+                        // site/demo.js addHeatmapRow() does — to be gated by
+                        // settings.enableHeatmap and kept session-only in
+                        // [sessionHeatmaps] (never persisted).
+                        // TODO(app): wire that call; until then no map is shown.
                         analysisResult = AnalysisUIState(
                             verdict = verdict,
                             confidence = result.uiConfidence,
                             processingTimeMs = processingTime,
-                            heatmapImage = heatmap,
+                            heatmapImage = null,
                             // Surface the server's qualifier (degradation
-                            // abstain reason / provenance note) honestly.
+                            // abstain reason / edit note / provenance note)
+                            // honestly; with none, the server's own timing —
+                            // the same fallback site/demo.js uses.
                             detailNote = result.detail
+                                ?: result.elapsedMs?.let { ms -> "Server analysis took $ms ms." }
                         )
 
                         historyRepository.addEntry(entry)
