@@ -9,11 +9,11 @@ import kotlinx.serialization.Serializable
  * configures their own server in the Settings screen on first run.
  * Empty default forces them to do so before /analyze can fire.
  *
- * `apiKey` carries the X-API-Key header value when set. The server
- * requires it for mutating endpoints (/rag/add, /rag/feedback,
- * /finetune); for /analyze it's optional but recommended so the
- * server's rate limiter identifies your traffic instead of bucketing
- * you with everyone else on the same egress IP.
+ * `apiKey` carries the X-API-Key header value. The production API
+ * (api_gateway.py, GATEWAY_ENABLED=1) REQUIRES it on every /analyze call:
+ * a keyless request is a 401. Keys are issued at https://tayanch.com/api.
+ * Without a key the app can only show the on-device offline estimate,
+ * which is a fallback, not the product (see AppViewModel.analyzeWithLocalModel).
  *
  * `requireAttestation` (default false): when true the upload proceeds only
  * if the server's `/pubkey` evidence VERIFIES against the pinned policy;

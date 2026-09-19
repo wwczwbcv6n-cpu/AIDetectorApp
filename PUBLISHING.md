@@ -1,31 +1,18 @@
 # Publishing the AI Detector App
 
-This doc covers shipping `AIDetectorApp` to the Google Play Store and Apple App Store. The v1 app uses the on-device `HeuristicAIDetector` (pure math, no model file). When the trained `UnifiedFusionNet` checkpoint is exported as TorchScript, swap the local path for the model — same app, smarter brain.
+This doc covers shipping `AIDetectorApp` to the Google Play Store and Apple App Store. The shipped flow is API-first: the app seals the file (TSE2 envelope), posts it to the Tayanch API with the user's key, shows the server's verdict, and can request the heat map with the returned token. `HeuristicAIDetector` is only the OFFLINE ESTIMATE the app falls back to (clearly labelled) when the API is unreachable or not configured — it is not the product and there is no plan to ship a model file in the app (updated 2026-09-19).
 
 ---
 
 ## Current state
 
-**Works:**
-- `HeuristicAIDetector` — 7-feature on-device classifier, runs everywhere with no weights file. Per-feature scores surface in `AnalysisUIState.detailedFeatures` and render in the existing detail screen.
-- API path — when the device can reach `apiBaseUrl`, results come from `server.py`.
-- History, settings, image picker — all functional.
+**Works (2026-09-19):**
+- API path — the product. `ApiClient` seals the request (TSE2, HPKE via BouncyCastle), classifies the server's `/pubkey` attestation state against the pinned policy, posts to `/analyze` with the X-API-Key, and decodes the served schema (`ApiAnalysisResult`, pinned by the main repo's `contract/api_v2.json`).
+- Offline estimate — `HeuristicAIDetector` (7 features, no weights file) runs only when the API call fails or no server is configured, and is always labelled as an offline estimate.
+- History, settings, image picker, share intent — functional.
+- Gates: `./gradlew :shared:desktopTest` (DTO parsing + TSE2 vectors) and `./gradlew :androidApp:assembleDebug` must be green before a build is uploaded.
 
-**Pre-existing issues you must fix before either store will accept a build** (none introduced by the heuristic work; they predate it):
-
-| File | Issue | Fix |
-|---|---|---|
-| `Logger.kt`, `RateLimiter.kt`, `AppViewModel*.kt` | `System.currentTimeMillis()` in commonMain | replace with `expect fun nowMillis(): Long` actuals, or add `kotlinx-datetime` and use `Clock.System.now().toEpochMilliseconds()` |
-| `AnalysisHistory.kt`, `DetailScreenV2.kt`, `SettingsScreen.kt` | `String.format` in commonMain | replace with manual `"%.2f".let { ... }` or an expect helper |
-| `AppViewModel.kt`, `AppViewModelV2.kt` | `AnalysisUIState` redeclared | delete the class from `AppViewModel.kt` and import the V2 version |
-| `DetailScreenV2.kt`, `AnalysisScreenV2.kt` | `TextOverflow` unresolved | add `import androidx.compose.ui.text.style.TextOverflow` |
-| `data/AIDetectorApi.kt` | string-template syntax error at line 32 | fix the unterminated `${...}` |
-| `SharedViewModel.kt` | `LocalContext`, `res` references | belongs in `androidMain`, not `commonMain` — move it |
-| desktop target | `pytorch-lite-multiplatform` has no JVM variant | drop desktop target, or wrap PyTorch dep in `androidMain` only |
-
-I did not fix these in this commit because they're cross-cutting and unrelated to the detector work — list them here so you can knock them out in one focused pass.
-
----
+**Store-readiness issues:** the May 2026 table that stood here listed prototype-era problems and was stale; re-audit against the current code before a store submission (icon, name, privacy strings, data-safety form) and keep the list here.
 
 ## Android → Google Play Store
 
@@ -131,14 +118,6 @@ I can scaffold these in a follow-up if you want; they're not in this PR because 
 
 ---
 
-## Updating to the trained model later
+## The model lives on the server
 
-Once `models/ai_detector_unified_v1.pth` is exported to TorchScript:
-```python
-# in repo root
-python export_model_for_mobile.py \
-    --checkpoint models/ai_detector_unified_v1.pth \
-    --out AIDetectorApp/shared/src/androidMain/assets/ai_detector_v1.ptl
-```
-
-Then in `AppViewModelV2.analyzeWithLocalModel`, switch the call from `heuristicDetector.analyze(...)` back to `aiDetector.analyzeImage(...)`. No app re-architecture needed — this is the design.
+There is no on-device model to update. The detector is served by the Tayanch API (`deploy/modal_app.py` → `demo_api.py` in the main repo); the app only needs the API base URL and a key. The `UnifiedFusionNet` / TorchScript export plan described here earlier was the spring-2026 trainer, which is archived in the main repo (`docs/INDEX.md`).
