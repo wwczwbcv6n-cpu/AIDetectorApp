@@ -5,6 +5,8 @@ import java.util.zip.CRC32
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import com.myapplication.common.data.AnalysisHistoryEntry
+import com.myapplication.common.data.Verdict
 
 /**
  * [MetadataAnalyzer.generatorMatch] decides "AI, 95%" on the phone with NO
@@ -101,6 +103,34 @@ class MetadataAnalyzerTest {
             "4": {"inputs": {"images": ["2", 0]}, "class_type": "SaveImage"}}"""
         val bytes = png(tEXt("prompt", graph))
         assertNull(MetadataAnalyzer.analyze(bytes).generatorMatch)
+    }
+
+    // ── the verdict cache must not replay the old scan's accusations ─────
+    // History survives an app update (EncryptedSharedPreferences / file
+    // store), and AppViewModel consults it BEFORE the metadata scan, so a
+    // PROVENANCE "AI" row the pre-PROV-7 substring scan wrote for a real
+    // photo would come back as "Cached result" forever for the same bytes.
+
+    private fun provenanceRow(hash: String) = AnalysisHistoryEntry(
+        fileName = "IMG_0001.jpg", fileSize = 1234L, isAI = true,
+        confidence = 0.95f, analysisMode = "PROVENANCE", processingTimeMs = 3L,
+        verdict = Verdict.AI.name, sha256 = hash)
+
+    @Test
+    fun cachedProvenanceRowIsNotReplayed() {
+        val bytes = jpeg(app1Exif(artist = "Leonardo Rossi"))
+        val hash = sha256Hex(bytes)
+        assertNull(cachedVerdict(listOf(provenanceRow(hash)), hash))
+    }
+
+    @Test
+    fun cachedServerRowIsStillReplayed() {
+        val bytes = jpeg(app1Exif(artist = "Leonardo Rossi"))
+        val hash = sha256Hex(bytes)
+        val server = provenanceRow(hash).copy(
+            analysisMode = "SERVER", isAI = false, verdict = Verdict.AUTHENTIC.name)
+        // An older PROVENANCE row for the same bytes must not shadow it.
+        assertEquals(server, cachedVerdict(listOf(provenanceRow(hash), server), hash))
     }
 
     // ── files that confess their generation: still decided locally ───────

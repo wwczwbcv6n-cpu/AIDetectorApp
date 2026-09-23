@@ -142,9 +142,10 @@ class AppViewModel(
                 // 0. Verdict cache — exact byte hash only (§10). Feeds repeat
                 //    the same media constantly; an identical byte stream gets
                 //    the stored verdict instantly, for free. The hash stays on
-                //    this device (it is never logged or sent).
-                val cached = historyRepository.getHistory(500)
-                    .firstOrNull { it.sha256 == hash }
+                //    this device (it is never logged or sent). PROVENANCE rows
+                //    are skipped: the scan below is free and current, and rows
+                //    the pre-PROV-7 substring scan wrote accused real photos.
+                val cached = cachedVerdict(historyRepository.getHistory(500), hash)
                 if (cached != null) {
                     analysisResult = AnalysisUIState(
                         verdict = cached.verdictBand,
