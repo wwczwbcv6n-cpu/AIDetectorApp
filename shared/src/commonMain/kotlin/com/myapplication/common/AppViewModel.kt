@@ -156,11 +156,12 @@ class AppViewModel(
                     return@launch
                 }
 
-                // 1. Provenance/metadata — free byte scan; a generator
-                //    signature (SD/Midjourney EXIF, IPTC trainedAlgorithmicMedia)
-                //    is near-perfect precision, so it decides without a
-                //    network round-trip. Absence proves nothing and falls
-                //    through to the model.
+                // 1. Provenance/metadata — free byte scan. Only a file that
+                //    confesses its own generation (an A1111 / ComfyUI settings
+                //    chunk, the IPTC trainedAlgorithmicMedia URL) decides here
+                //    without a network round-trip; a name in a caption or an
+                //    Artist field never does (MetadataAnalyzer, audit PROV-7).
+                //    Absence proves nothing and falls through to the server.
                 val meta = withContext(Dispatchers.Default) {
                     try {
                         MetadataAnalyzer.analyze(imageData)

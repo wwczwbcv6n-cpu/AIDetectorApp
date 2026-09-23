@@ -104,9 +104,11 @@ class ShareActivity : ComponentActivity() {
                     if (imageData == null) {
                         Result.failure(ApiException(ApiError.Unknown("Couldn't read the shared image.")))
                     } else {
-                        // Provenance first (research §7): a generator signature
-                        // in the metadata is near-perfect precision and free —
-                        // decide locally, skip the upload entirely.
+                        // Provenance first (research §7): a file that confesses
+                        // its own generation (A1111 / ComfyUI settings chunk,
+                        // IPTC trainedAlgorithmicMedia URL) is decided locally
+                        // and never uploaded. Names in captions or Artist no
+                        // longer count (MetadataAnalyzer, audit PROV-7).
                         val meta = try {
                             MetadataAnalyzer.analyze(imageData)
                         } catch (e: Exception) {
