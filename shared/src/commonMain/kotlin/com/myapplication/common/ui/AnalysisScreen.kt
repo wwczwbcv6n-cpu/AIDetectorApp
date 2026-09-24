@@ -158,6 +158,14 @@ fun AnalysisScreen(viewModel: AppViewModel) {
 
                     Divider()
 
+                    // A cached verdict can be re-checked against the server's
+                    // current model (audit 2026-09-24 APP-12).
+                    if (viewModel.canReanalyze && !viewModel.isLoading) {
+                        OutlinedButton(onClick = { viewModel.reanalyze() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Analyze again")
+                        }
+                    }
+
                     // Processing Time
                     Text(
                         text = "Processing time: ${result.processingTimeMs}ms",

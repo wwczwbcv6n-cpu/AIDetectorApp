@@ -41,6 +41,9 @@ data class AnalysisHistoryEntry(
     val label: String? = null,
     val confidencePct: Float? = null,
     val mixAiShare: Float? = null,
+    // The server head that decided this row (`model`); the verdict cache
+    // replays a row only for the same model (audit APP-12).
+    val model: String? = null,
 ) {
     /**
      * The three-band [Verdict], preferring the persisted name over [isAI].

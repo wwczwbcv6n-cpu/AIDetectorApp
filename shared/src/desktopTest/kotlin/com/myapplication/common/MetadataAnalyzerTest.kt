@@ -120,7 +120,7 @@ class MetadataAnalyzerTest {
     fun cachedProvenanceRowIsNotReplayed() {
         val bytes = jpeg(app1Exif(artist = "Leonardo Rossi"))
         val hash = sha256Hex(bytes)
-        assertNull(cachedVerdict(listOf(provenanceRow(hash)), hash))
+        assertNull(cachedVerdict(listOf(provenanceRow(hash).copy(model = "m")), hash, "m"))
     }
 
     @Test
@@ -128,9 +128,9 @@ class MetadataAnalyzerTest {
         val bytes = jpeg(app1Exif(artist = "Leonardo Rossi"))
         val hash = sha256Hex(bytes)
         val server = provenanceRow(hash).copy(
-            analysisMode = "SERVER", isAI = false, verdict = Verdict.AUTHENTIC.name)
+            analysisMode = "SERVER", isAI = false, verdict = Verdict.AUTHENTIC.name, model = "m")
         // An older PROVENANCE row for the same bytes must not shadow it.
-        assertEquals(server, cachedVerdict(listOf(provenanceRow(hash), server), hash))
+        assertEquals(server, cachedVerdict(listOf(provenanceRow(hash).copy(model = "m"), server), hash, "m"))
     }
 
     // ── files that confess their generation: still decided locally ───────

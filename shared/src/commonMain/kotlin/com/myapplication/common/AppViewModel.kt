@@ -121,7 +121,17 @@ class AppViewModel(
         coroutineScope.cancel()
     }
 
-    fun analyzeImage(imageData: ByteArray, fileName: String, fileSize: Long = 0L) {
+    /** The last analyzed image, kept for this session only so "Analyze again" can resend it. */
+    private var lastImage: Triple<ByteArray, String, Long>? = null
+    var canReanalyze by mutableStateOf(false)
+
+    /** Re-run the last image against the server, bypassing the verdict cache (APP-12). */
+    fun reanalyze() {
+        val (bytes, name, size) = lastImage ?: return
+        analyzeImage(bytes, name, size, bypassCache = true)
+    }
+
+    fun analyzeImage(imageData: ByteArray, fileName: String, fileSize: Long = 0L, bypassCache: Boolean = false) {
         // In-flight guard (#5): ignore taps while a request is already running so
         // a double-tap can't fire two overlapping analyses / two history writes.
         if (isLoading) {
@@ -163,8 +173,13 @@ class AppViewModel(
                 //    this device (it is never logged or sent). PROVENANCE rows
                 //    are skipped: the scan below is free and current, and rows
                 //    the pre-PROV-7 substring scan wrote accused real photos.
-                val cached = cachedVerdict(historyRepository.getHistory(500), hash)
+                lastImage = Triple(imageData, fileName, fileSize)
+                canReanalyze = false
+                val cached = if (bypassCache) null else apiClient?.currentModel()?.let { model ->
+                    cachedVerdict(historyRepository.getHistory(HISTORY_LIMIT), hash, model)
+                }
                 if (cached != null) {
+                    canReanalyze = true
                     analysisResult = cached.toUiState(sessionHeatmaps[cached.id]).copy(
                         processingTimeMs = nowMillis() - startTime,
                         detailNote = "Cached result — identical image analyzed ${cached.formattedTime}."
@@ -245,6 +260,7 @@ class AppViewModel(
                             label = result.label,
                             confidencePct = result.confidence?.toFloat(),
                             mixAiShare = result.mix?.toSummary()?.aiShare,
+                            model = result.model,
                         )
                         // Heat map: /analyze never inlines one (the old inline
                         // base64 field was never served). It is a

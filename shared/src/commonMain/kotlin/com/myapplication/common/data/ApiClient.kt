@@ -338,6 +338,24 @@ class ApiClient(
     /** Until when the server counts as warm (nowMillis); 0 = never checked. */
     private var warmUntil = 0L
 
+    /** The head /health said it serves, from the last warm-up (APP-12). */
+    private var serverModel: String? = null
+
+    /**
+     * The model the server serves now (GET /health, reusing a warm-up within
+     * [Backoff.warmForMs]); null when unknown or unreachable. The verdict
+     * cache replays only rows decided by this model.
+     */
+    suspend fun currentModel(): String? {
+        if (!settings.isApiUrlAcceptable()) return null
+        return try {
+            warmUp()
+            serverModel
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     /** Called with every classification, on the caller's dispatcher; the UI shows exactly one state. */
     var onTierState: ((TierState) -> Unit)? = null
 
@@ -492,6 +510,12 @@ class ApiClient(
                 when (r.status.value) {
                     in 200..299 -> {
                         warmUntil = nowMillis() + backoff.warmForMs
+                        serverModel = try {
+                            ((json.parseToJsonElement(r.bodyAsText()) as? kotlinx.serialization.json.JsonObject)
+                                ?.get("model") as? kotlinx.serialization.json.JsonPrimitive)?.content
+                        } catch (e: Exception) {
+                            null
+                        }
                         return
                     }
                     502, 503, 504 -> true

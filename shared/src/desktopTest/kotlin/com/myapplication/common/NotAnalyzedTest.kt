@@ -101,7 +101,7 @@ class NotAnalyzedTest {
 
     @Test
     fun oldLocalRowIsNeverACacheHit() {
-        assertNull(cachedVerdict(listOf(localRow), localRow.sha256!!))
+        assertNull(cachedVerdict(listOf(localRow.copy(model = "m")), localRow.sha256!!, "m"))
     }
 
     @Test
