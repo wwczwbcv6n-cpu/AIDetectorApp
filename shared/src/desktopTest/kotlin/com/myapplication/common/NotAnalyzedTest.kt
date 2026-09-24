@@ -78,9 +78,9 @@ class NotAnalyzedTest {
 
     @Test
     fun authFailureShowsTheErrorOnly() {
-        val outcome = failureOutcome(ApiException(ApiError.Auth))
+        val outcome = failureOutcome(ApiException(ApiError.Auth()))
         assertNull(outcome.state)
-        assertEquals(ApiError.Auth.userMessage, outcome.errorMessage)
+        assertEquals(ApiError.Auth().userMessage, outcome.errorMessage)
     }
 
     // ── LOCAL rows the old fallback already wrote to history ─────────────

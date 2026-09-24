@@ -243,8 +243,15 @@ sealed class ApiError(val userMessage: String) {
     object Network : ApiError("Couldn't reach the server. Check your connection and API URL.")
     /** Request exceeded the configured timeout. */
     object Timeout : ApiError("The server took too long to respond. Try again.")
-    /** 401/403 — bad or missing API key. */
-    object Auth : ApiError("Authentication failed. Check your API key in Settings.")
+    /**
+     * 401/403 — bad, missing, revoked or expired API key. [serverMessage] is
+     * the gateway's own text ("missing API key — get a free key at
+     * https://tayanch.com/api", "API key revoked", ...), shown as is (APP-08).
+     */
+    class Auth(val serverMessage: String? = null) : ApiError(
+        serverMessage?.takeIf { it.isNotBlank() }?.let { "The server refused the API key: $it" }
+            ?: "Authentication failed. Check your API key in Settings."
+    )
     /** 4xx other than auth (bad request, unsupported media, etc.). */
     class ClientError(val status: Int, val serverMessage: String?) :
         ApiError(serverMessage ?: "The server rejected the request ($status).")
@@ -476,7 +483,26 @@ class ApiClient(
                     }
                 }
 
-                // 4. Pre-open errors: plain JSON, no user data (SPEC §3).
+                // 4a. Post-open errors: once the server opened the envelope it
+                //     seals EVERY JSON reply (secure_api.py), errors included —
+                //     415 'unreadable image', 400 'image too large (...)', 500.
+                //     Open them with this request's state so the user sees the
+                //     server's reason, not "rejected the request (415)" (APP-08).
+                if (isSecureV2(response.contentType())) {
+                    val plain = try {
+                        Tse2.openResponse(hpke, sealed.state, response.readBytes())
+                    } catch (e: Tse2Exception) {
+                        return Result.failure(ApiException(ApiError.Protocol(e.message ?: "error reply could not be opened")))
+                    }
+                    val reason = try {
+                        json.decodeFromString<PreOpenError>(plain.decodeToString()).error
+                    } catch (e: Exception) {
+                        null
+                    }
+                    return Result.failure(ApiException(errorForStatus(status, reason)))
+                }
+
+                // 4b. Pre-open errors: plain JSON, no user data (SPEC §3).
                 val err = preOpenErrorOf(response)
                 when {
                     status == 409 && err?.error == "key_mismatch" -> {
@@ -495,12 +521,8 @@ class ApiClient(
                         return Result.failure(ApiException(ApiError.ClientError(status, "The server already saw this envelope (replay). Try again.")))
                     status == 400 && err?.error == "stale_timestamp" ->
                         return Result.failure(ApiException(ApiError.StaleTimestamp(err.serverTime)))
-                    status == 401 || status == 403 ->
-                        return Result.failure(ApiException(ApiError.Auth))
-                    status in 400..499 ->
-                        return Result.failure(ApiException(ApiError.ClientError(status, err?.error)))
                     else ->
-                        return Result.failure(ApiException(ApiError.ServerError(status, err?.error)))
+                        return Result.failure(ApiException(errorForStatus(status, err?.error)))
                 }
             } finally {
                 sealed.state.wipe()
@@ -508,20 +530,57 @@ class ApiClient(
         }
     }
 
-    /** GET /pubkey?nonce=…; null when the server does not offer a v2 key document. */
+    /** A non-2xx status + the server's `error` text -> the typed error the user sees. */
+    private fun errorForStatus(status: Int, reason: String?): ApiError = when (status) {
+        401, 403 -> ApiError.Auth(reason)
+        in 400..499 -> ApiError.ClientError(status, reason)
+        else -> ApiError.ServerError(status, reason)
+    }
+
+    /**
+     * GET /pubkey?nonce=…; null when the server answered a JSON document that
+     * is not a usable v2 key (-> TierState.Failed, nothing is sent).
+     *
+     * A server that did not answer /pubkey at all is NOT an attestation
+     * failure (audit 2026-09-24 APP-08): an HTTP error or a non-JSON body
+     * (e.g. the website's 404 page because the user typed tayanch.com) throws
+     * a Configuration / Auth / ServerError instead, so the user sees "wrong
+     * URL" or "server unavailable" rather than "Attestation failed". Nothing
+     * is sent in either case.
+     */
     private suspend fun fetchPubkeyDocument(nonceHex: String): PubkeyDocument? {
         val response = httpClient.get("$baseUrl$ROUTE_PUBKEY") {
             applyAuth()
             parameter("nonce", nonceHex)
             timeout { requestTimeoutMillis = PUBKEY_TIMEOUT_MS }
         }
-        if (response.status.value !in 200..299) return null
+        val status = response.status.value
+        val text = response.bodyAsText()
+        val obj = try {
+            json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject
+        } catch (e: Exception) {
+            null
+        }
+        if (status !in 200..299) {
+            val reason = (obj?.get("error") as? kotlinx.serialization.json.JsonPrimitive)?.content
+            throw ApiException(when {
+                status == 401 || status == 403 -> ApiError.Auth(reason)
+                status >= 500 -> ApiError.ServerError(status,
+                    "The Tayanch server is unavailable right now (HTTP $status). Try again in a moment.")
+                else -> notTayanch("HTTP $status")
+            })
+        }
+        if (obj == null) throw ApiException(notTayanch("not a key document"))
         return try {
-            json.decodeFromString<PubkeyDocument>(response.bodyAsText())
+            json.decodeFromJsonElement(PubkeyDocument.serializer(), obj)
         } catch (e: Exception) {
             null
         }
     }
+
+    private fun notTayanch(what: String) = ApiError.Configuration(
+        "No Tayanch API answered at this URL (/pubkey: $what). " +
+            "Check the API URL in Settings — it is the API host, not the website.")
 
     private suspend fun classify(doc: PubkeyDocument?, nonceHex: String): Classification {
         val c = if (doc == null) {
@@ -595,7 +654,7 @@ class ApiClient(
                 timeout { requestTimeoutMillis = PROBE_TIMEOUT_MS }
             }
             when (val st = probe.status.value) {
-                401, 403 -> Result.failure(ApiException(ApiError.Auth))
+                401, 403 -> Result.failure(ApiException(ApiError.Auth(preOpenErrorOf(probe)?.error)))
                 429 -> Result.failure(ApiException(ApiError.ClientError(st, preOpenErrorOf(probe)?.error)))
                 in 200..299, 404, 405 -> Result.success("✓ Connected — the server accepted this API key.")
                 else -> Result.failure(ApiException(ApiError.ServerError(st, preOpenErrorOf(probe)?.error)))
