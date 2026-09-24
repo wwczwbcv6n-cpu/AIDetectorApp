@@ -341,22 +341,36 @@ class AppViewModel(
         analysisResult = entry.toUiState(sessionHeatmaps[entry.id])
     }
 
-    fun testApiConnection() {
+    /** Settings -> "Test API Connection": the line shown under the button, and whether it passed. */
+    var connectionTestMessage by mutableStateOf<String?>(null)
+    var connectionTestOk by mutableStateOf(false)
+    var isTestingConnection by mutableStateOf(false)
+
+    /**
+     * Test the values being EDITED on the Settings screen, not the saved ones
+     * (audit 2026-09-24 APP-04): a throwaway client, closed afterwards; the
+     * result is shown on the Settings screen itself.
+     */
+    fun testApiConnection(candidate: AppSettings) {
+        if (isTestingConnection) return
         coroutineScope.launch {
-            isLoading = true
-            errorMessage = null
+            isTestingConnection = true
+            connectionTestMessage = null
+            val client = ApiClient(candidate)
             try {
-                val result = apiClient?.healthCheck()
-                if (result?.isSuccess == true) {
-                    errorMessage = "✓ API connection successful"
-                } else {
-                    errorMessage = "✗ API connection failed"
-                }
-            } catch (e: Exception) {
-                errorMessage = "✗ API connection failed: ${e.message}"
+                val r = client.testConnection()
+                connectionTestOk = r.isSuccess
+                connectionTestMessage = r.getOrNull()
+                    ?: ("✗ " + ((r.exceptionOrNull() as? ApiException)?.apiError?.userMessage
+                        ?: "Connection test failed."))
             } finally {
-                isLoading = false
+                try { client.close() } catch (e: Exception) { Logger.warn("test client close failed") }
+                isTestingConnection = false
             }
         }
+    }
+
+    fun clearConnectionTest() {
+        connectionTestMessage = null
     }
 }

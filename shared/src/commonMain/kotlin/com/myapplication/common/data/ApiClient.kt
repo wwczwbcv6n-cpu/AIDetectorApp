@@ -546,28 +546,53 @@ class ApiClient(
         null
     }
 
-    suspend fun healthCheck(): Result<Unit> {
+    /**
+     * Settings -> "Test API Connection" (audit 2026-09-24 APP-04). Two probes,
+     * both free and neither billable:
+     *  1. GET /health must answer 2xx JSON with a `status` — otherwise this URL
+     *     is not a Tayanch API (e.g. the marketing site's 404 page);
+     *  2. GET [ROUTE_KEY_PROBE] with the key: that route is outside the
+     *     gateway's open paths and not billable, so the gateway authenticates
+     *     the key BEFORE the route answers — 401/403 = the key is refused;
+     *     the route's own 404 (or any 2xx) = the key passed. /health alone is
+     *     an open path and passed with no key or a revoked one.
+     * Success carries the line to show; failures are typed [ApiError]s.
+     */
+    suspend fun testConnection(): Result<String> {
         try {
             ensureUrl()
         } catch (e: IllegalStateException) {
-            return Result.failure(
-                ApiException(ApiError.Configuration(e.message ?: "API URL not configured."))
-            )
+            return Result.failure(ApiException(ApiError.Configuration(e.message ?: "API URL not configured.")))
         }
         return try {
-            val response = httpClient.get("$baseUrl/health") {
-                applyAuth()
-                timeout { requestTimeoutMillis = 5000 }
+            val health = httpClient.get("$baseUrl/health") {
+                timeout { requestTimeoutMillis = PROBE_TIMEOUT_MS }
             }
-            when (response.status.value) {
-                in 200..299 -> Result.success(Unit)
+            val healthOk = health.status.value in 200..299 && try {
+                json.parseToJsonElement(health.bodyAsText()).let {
+                    it is kotlinx.serialization.json.JsonObject && "status" in it
+                }
+            } catch (e: Exception) {
+                false
+            }
+            if (!healthOk) {
+                return Result.failure(ApiException(ApiError.Configuration(
+                    "No Tayanch API answered at this URL (HTTP ${health.status.value}). " +
+                        "Check the API URL — it is the API host, not the website.")))
+            }
+            if (settings.apiKey.isBlank()) {
+                return Result.failure(ApiException(ApiError.Configuration(
+                    "The server answered, but no API key is set — get a free key at https://tayanch.com/api.")))
+            }
+            val probe = httpClient.get("$baseUrl$ROUTE_KEY_PROBE") {
+                applyAuth()
+                timeout { requestTimeoutMillis = PROBE_TIMEOUT_MS }
+            }
+            when (val st = probe.status.value) {
                 401, 403 -> Result.failure(ApiException(ApiError.Auth))
-                in 400..499 -> Result.failure(
-                    ApiException(ApiError.ClientError(response.status.value, null))
-                )
-                else -> Result.failure(
-                    ApiException(ApiError.ServerError(response.status.value, null))
-                )
+                429 -> Result.failure(ApiException(ApiError.ClientError(st, preOpenErrorOf(probe)?.error)))
+                in 200..299, 404, 405 -> Result.success("✓ Connected — the server accepted this API key.")
+                else -> Result.failure(ApiException(ApiError.ServerError(st, preOpenErrorOf(probe)?.error)))
             }
         } catch (e: HttpRequestTimeoutException) {
             Result.failure(ApiException(ApiError.Timeout))
@@ -588,6 +613,14 @@ class ApiClient(
         const val HEADER_NONCE = "X-Tayanch-Nonce"
         const val SECURE_V2 = "application/vnd.tayanch.secure+v2"
         private const val PUBKEY_TIMEOUT_MS = 10_000L
+        private const val PROBE_TIMEOUT_MS = 15_000L
+        /**
+         * Key probe for [testConnection]: a served route that is NOT in the
+         * gateway's open_paths and NOT billable (demo_api.py create_app), so the
+         * gateway checks X-API-Key first and the route itself (admin-token
+         * gated) then answers 404. No quota is spent.
+         */
+        const val ROUTE_KEY_PROBE = "/stats"
         private const val JWKS_TIMEOUT_MS = 10_000L
     }
 }

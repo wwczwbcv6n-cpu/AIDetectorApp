@@ -9,6 +9,7 @@ import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,7 +54,10 @@ fun SettingsScreen(viewModel: AppViewModel) {
                 !settings.isApiUrlAcceptable()
         OutlinedTextField(
             value = settings.apiBaseUrl,
-            onValueChange = { settings = settings.copy(apiBaseUrl = it) },
+            onValueChange = {
+                settings = settings.copy(apiBaseUrl = it)
+                viewModel.clearConnectionTest()
+            },
             label = { Text("API Base URL") },
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text("https://api.example.com") },
@@ -70,7 +74,10 @@ fun SettingsScreen(viewModel: AppViewModel) {
 
         OutlinedTextField(
             value = settings.apiKey,
-            onValueChange = { settings = settings.copy(apiKey = it.trim()) },
+            onValueChange = {
+                settings = settings.copy(apiKey = it.trim())
+                viewModel.clearConnectionTest()
+            },
             label = { Text("API Key (X-API-Key)") },
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text("paste the key your server admin issued") },
@@ -89,11 +96,24 @@ fun SettingsScreen(viewModel: AppViewModel) {
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
         )
 
+        // Tests the values typed above (not the saved ones) and shows the
+        // result right here (audit 2026-09-24 APP-04).
         Button(
-            onClick = { viewModel.testApiConnection() },
+            onClick = {
+                viewModel.testApiConnection(
+                    settings.copy(apiTimeout = timeoutText.toLongOrNull() ?: settings.apiTimeout))
+            },
+            enabled = !viewModel.isTestingConnection,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Test API Connection")
+            Text(if (viewModel.isTestingConnection) "Testing…" else "Test API Connection")
+        }
+        viewModel.connectionTestMessage?.let { msg ->
+            Text(
+                msg,
+                style = MaterialTheme.typography.body2,
+                color = if (viewModel.connectionTestOk) Color(0xFF2E7D32) else MaterialTheme.colors.error,
+            )
         }
 
         Divider()
