@@ -209,19 +209,7 @@ class AppViewModel(
                         processingTimeMs = processingTime,
                         detailNote = "AI generator signature in metadata: ${meta.generatorMatch}"
                     )
-                    historyRepository.addEntry(
-                        AnalysisHistoryEntry(
-                            fileName = fileName,
-                            fileSize = fileSize,
-                            isAI = true,
-                            confidence = 0.95f,
-                            analysisMode = "PROVENANCE",
-                            processingTimeMs = processingTime,
-                            verdict = Verdict.AI.name,
-                            sha256 = hash,
-                            label = LOCAL_PROVENANCE_LABEL,
-                        )
-                    )
+                    historyRepository.addEntry(provenanceHistoryEntry(fileName, fileSize, processingTime, hash))
                     loadHistory()
                     return@launch
                 }
@@ -248,20 +236,7 @@ class AppViewModel(
                         val processingTime = nowMillis() - startTime
                         val verdict = result.toVerdict()
 
-                        val entry = AnalysisHistoryEntry(
-                            fileName = fileName,
-                            fileSize = fileSize,
-                            isAI = result.isAI,
-                            confidence = result.uiConfidence,
-                            analysisMode = AnalysisHistoryEntry.MODE_SERVER,
-                            processingTimeMs = processingTime,
-                            verdict = verdict.name,
-                            sha256 = hash,
-                            label = result.label,
-                            confidencePct = result.confidence?.toFloat(),
-                            mixAiShare = result.mix?.toSummary()?.aiShare,
-                            model = result.model,
-                        )
+                        val entry = serverHistoryEntry(result, fileName, fileSize, processingTime, hash)
                         // Heat map: /analyze never inlines one (the old inline
                         // base64 field was never served). It is a
                         // second sealed call — POST /heatmap with

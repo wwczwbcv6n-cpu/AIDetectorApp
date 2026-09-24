@@ -1,11 +1,12 @@
 package com.myapplication
 
+import android.app.Application
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.os.Parcelable
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.runtime.*
@@ -14,40 +15,129 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.IntentCompat
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.myapplication.common.LOCAL_PROVENANCE_LABEL
 import com.myapplication.common.MetadataAnalyzer
 import com.myapplication.common.PickedImage
-import com.myapplication.common.readPickedImage
+import com.myapplication.common.ShareRequestGuard
+import com.myapplication.common.data.AnalysisHistoryRepository
 import com.myapplication.common.data.ApiAnalysisResult
 import com.myapplication.common.data.ApiClient
 import com.myapplication.common.data.ApiError
 import com.myapplication.common.data.ApiException
-import com.myapplication.common.data.AppSettings
 import com.myapplication.common.data.SettingsRepository
-import com.myapplication.common.LOCAL_PROVENANCE_LABEL
+import com.myapplication.common.nowMillis
+import com.myapplication.common.provenanceHistoryEntry
+import com.myapplication.common.readPickedImage
+import com.myapplication.common.secure.TierState
+import com.myapplication.common.serverHistoryEntry
+import com.myapplication.common.sha256Hex
+import com.myapplication.common.ui.TierStateLine
 import com.myapplication.common.ui.VerdictStatusHeader
 import com.myapplication.common.ui.presentResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
+ * Holds the share-sheet analysis across Activity recreation (audit 2026-09-24
+ * APP-16). The old ShareActivity kept its state in plain `remember` inside
+ * LaunchedEffect(uri) and declared no configChanges, so rotating during
+ * "Analyzing…" destroyed it (closing the client) and re-ran the upload — a
+ * second billed call on the key. The request now runs in viewModelScope,
+ * started once per shared uri by a [ShareRequestGuard] this retained
+ * ViewModel owns; the client lives as long as the ViewModel.
+ */
+class ShareViewModel(app: Application) : AndroidViewModel(app) {
+    private val guard = ShareRequestGuard()
+    private var api: ApiClient? = null
+
+    var isLoading by mutableStateOf(false)
+        private set
+    var result by mutableStateOf<Result<ApiAnalysisResult>?>(null)
+        private set
+    var configError by mutableStateOf<String?>(null)
+        private set
+    /** The tier line the main screen shows too ("Standard tier: ..."). */
+    var tierState by mutableStateOf<TierState?>(null)
+        private set
+
+    fun start(uri: Uri) {
+        if (!guard.shouldStart(uri.toString())) return
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            isLoading = true
+            try {
+                val settings = withContext(Dispatchers.IO) { SettingsRepository(ctx).getSettings() }
+                if (!settings.isApiUrlAcceptable()) {
+                    configError = "Set the API Base URL in Settings before using Share-to-AI-Detector."
+                    return@launch
+                }
+                val client = api ?: ApiClient(settings).also { c ->
+                    c.onTierState = { s -> tierState = s }
+                    api = c
+                }
+                val started = nowMillis()
+                val picked = withContext(Dispatchers.IO) { readPickedImage(ctx, uri) }
+                val image = (picked as? PickedImage.Picked)
+                if (image == null) {
+                    val msg = (picked as? PickedImage.Refused)?.message ?: "Couldn't read the shared image."
+                    result = Result.failure(ApiException(ApiError.ClientError(413, msg)))
+                    return@launch
+                }
+                val name = image.displayName ?: "shared image"
+                val hash = withContext(Dispatchers.Default) { sha256Hex(image.bytes) }
+                val history = AnalysisHistoryRepository(ctx)
+                // Provenance first (research §7): a file that confesses its own
+                // generation is decided locally and never uploaded (PROV-7).
+                val meta = withContext(Dispatchers.Default) {
+                    try { MetadataAnalyzer.analyze(image.bytes) } catch (e: Exception) { null }
+                }
+                if (meta?.generatorMatch != null) {
+                    result = Result.success(ApiAnalysisResult(
+                        conclusion = "AI-Generated",
+                        verdict = "ai",
+                        label = LOCAL_PROVENANCE_LABEL,
+                        detail = "AI generator signature in metadata: ${meta.generatorMatch}",
+                        method = "provenance",
+                    ))
+                    history.addEntry(provenanceHistoryEntry(name, image.bytes.size.toLong(), nowMillis() - started, hash))
+                    return@launch
+                }
+                val r = client.analyzeImage(image.bytes)
+                result = r
+                // Share results are history too (APP-16): same row as the main screen.
+                r.getOrNull()?.let {
+                    history.addEntry(serverHistoryEntry(it, name, image.bytes.size.toLong(), nowMillis() - started, hash))
+                }
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+
+    override fun onCleared() {
+        try { api?.close() } catch (e: Exception) { /* best-effort */ }
+        api = null
+        super.onCleared()
+    }
+}
+
+/**
  * Share-sheet entry point — the product's primary, policy-safe surface (user
- * taps Share in any app → picks us → we analyze). This now uses [ApiClient]
- * (typed errors + the calibrated 3-way `verdict`) and renders the same honest
- * three-band result as the in-app screens, instead of the old binary red/green
- * stamp that turned an "uncertain" server call into a false accusation.
+ * taps Share in any app → picks us → we analyze). Renders the same result
+ * card as the in-app screens (ui/ResultPresentation.kt) plus the tier line.
  */
 class ShareActivity : ComponentActivity() {
 
-    // Lazy: only constructed once we have an Android Context (post-onCreate).
-    private val settingsRepo by lazy { SettingsRepository(this) }
-    private var settings: AppSettings = AppSettings()
-    private var api: ApiClient? = null
+    private val vm: ShareViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         val imageUri = getUriFromIntent(intent)
-
+        imageUri?.let { vm.start(it) }
         setContent {
             MaterialTheme {
                 ShareScreen(imageUri)
@@ -55,128 +145,49 @@ class ShareActivity : ComponentActivity() {
         }
     }
 
-    override fun onDestroy() {
-        // Release the HttpClient created for this share session so its engine /
-        // connection pool doesn't outlive the Activity.
-        try {
-            api?.close()
-        } catch (e: Exception) {
-            // Best-effort cleanup; never crash teardown.
-        }
-        api = null
-        super.onDestroy()
-    }
-
     private fun getUriFromIntent(intent: Intent): Uri? {
         if (intent.action != Intent.ACTION_SEND) return null
-        // getParcelableExtra(String) is deprecated from API 33; the typed
-        // overload also hardens against a non-Uri extra planted by a
-        // malicious sender (returns null instead of ClassCastException).
-        return if (android.os.Build.VERSION.SDK_INT >= 33) {
-            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-        } else {
-            @Suppress("DEPRECATION")
-            (intent.getParcelableExtra<Parcelable>(Intent.EXTRA_STREAM) as? Uri)
-        }
+        // IntentCompat: the typed lookup on every API level (the platform's
+        // typed overload is unreliable on API 33), and a non-Uri extra planted
+        // by a malicious sender comes back null instead of throwing.
+        return IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
     }
 
     @Composable
     fun ShareScreen(uri: Uri?) {
-        var result by remember { mutableStateOf<Result<ApiAnalysisResult>?>(null) }
-        var isLoading by remember { mutableStateOf(false) }
-        var configError by remember { mutableStateOf<String?>(null) }
-
-        // Run the analysis inside the LaunchedEffect's own coroutine, which is
-        // tied to this composition's lifecycle and cancelled automatically when
-        // the Activity is destroyed.
-        LaunchedEffect(uri) {
-            if (uri != null) {
-                isLoading = true
-                // Load settings first; refuse to fire if the user hasn't
-                // configured a server.
-                settings = withContext(Dispatchers.IO) { settingsRepo.getSettings() }
-                if (!settings.isApiUrlAcceptable()) {
-                    configError = "Set the API Base URL in Settings before " +
-                        "using Share-to-AI-Detector."
-                    isLoading = false
-                    return@LaunchedEffect
-                }
-                if (api == null) api = ApiClient(settings)
-
-                result = withContext(Dispatchers.IO) {
-                    // Size-checked before and while reading (audit APP-07): a
-                    // >40 MB file is refused here, not after a wasted upload.
-                    val picked = readPickedImage(this@ShareActivity, uri)
-                    val imageData = (picked as? PickedImage.Picked)?.bytes
-                    if (imageData == null) {
-                        val msg = (picked as? PickedImage.Refused)?.message ?: "Couldn't read the shared image."
-                        Result.failure(ApiException(ApiError.ClientError(413, msg)))
-                    } else {
-                        // Provenance first (research §7): a file that confesses
-                        // its own generation (A1111 / ComfyUI settings chunk,
-                        // IPTC trainedAlgorithmicMedia URL) is decided locally
-                        // and never uploaded. Names in captions or Artist no
-                        // longer count (MetadataAnalyzer, audit PROV-7).
-                        val meta = try {
-                            MetadataAnalyzer.analyze(imageData)
-                        } catch (e: Exception) {
-                            null
-                        }
-                        if (meta?.generatorMatch != null) {
-                            Result.success(
-                                ApiAnalysisResult(
-                                    conclusion = "AI-Generated",
-                                    verdict = "ai",
-                                    label = LOCAL_PROVENANCE_LABEL,
-                                    detail = "AI generator signature in metadata: ${meta.generatorMatch}",
-                                    method = "provenance",
-                                )
-                            )
-                        } else {
-                            api!!.analyzeImage(imageData)
-                        }
-                    }
-                }
-                isLoading = false
-            }
-        }
-
-        configError?.let { msg ->
+        vm.configError?.let { msg ->
             Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                 Text(msg, color = Color(0xFFCC0000), fontSize = 18.sp)
             }
             return
         }
 
-        Box(
+        Column(
             modifier = Modifier.fillMaxSize().padding(24.dp),
-            contentAlignment = Alignment.Center
+            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            vm.tierState?.let { TierStateLine(it) }
+            val result = vm.result
             when {
-                isLoading -> {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator()
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Analyzing…", fontSize = 18.sp)
-                    }
+                vm.isLoading -> {
+                    CircularProgressIndicator()
+                    Text("Analyzing…", fontSize = 18.sp)
                 }
                 result != null -> {
-                    // Unwrap with plain if/else rather than Result.fold: fold's
-                    // lambdas are not @Composable, so composable calls aren't
-                    // allowed inside them.
-                    val success = result!!.getOrNull()
+                    // Plain if/else rather than Result.fold: fold's lambdas are
+                    // not @Composable.
+                    val success = result.getOrNull()
                     if (success != null) {
                         ResultView(success)
                     } else {
-                        val e = result!!.exceptionOrNull()
+                        val e = result.exceptionOrNull()
                         val msg = (e as? ApiException)?.apiError?.userMessage
                             ?: e?.message ?: "Analysis failed."
                         Text(msg, color = Color(0xFFCC0000), fontSize = 18.sp)
                     }
                 }
-                uri == null -> {
-                    Text("No image shared.", fontSize = 18.sp)
-                }
+                uri == null -> Text("No image shared.", fontSize = 18.sp)
             }
         }
     }

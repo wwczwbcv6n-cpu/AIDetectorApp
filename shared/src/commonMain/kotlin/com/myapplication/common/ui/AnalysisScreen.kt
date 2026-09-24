@@ -26,7 +26,7 @@ import com.myapplication.common.secure.TierState
  * measurement earns anything stronger, and FAILED says nothing was sent.
  */
 @Composable
-private fun TierStateLine(state: TierState) {
+fun TierStateLine(state: TierState) {
     val background = when (state) {
         is TierState.Verified -> Color(0xFFE0FFE0)
         TierState.Unattested -> Color(0xFFFFF4D6)
