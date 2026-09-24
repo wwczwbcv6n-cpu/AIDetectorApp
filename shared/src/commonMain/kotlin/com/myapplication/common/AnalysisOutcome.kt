@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import com.myapplication.common.data.AnalysisHistoryEntry
 import com.myapplication.common.data.ApiError
 import com.myapplication.common.data.ApiException
+import com.myapplication.common.data.AppSettings
 import com.myapplication.common.data.MixSummary
 import com.myapplication.common.data.Verdict
 
@@ -78,3 +79,11 @@ fun AnalysisHistoryEntry.toUiState(heatmap: ImageBitmap? = null): AnalysisUIStat
 /** Headline of a verdict the phone decided itself (a metadata generation confession). */
 const val LOCAL_PROVENANCE_LABEL: String =
     "AI-generated — the file's own metadata declares an AI generator"
+
+/** Apply the settings that act outside the ApiClient (today: debug logging). */
+fun applySettingsSideEffects(settings: AppSettings) {
+    Logger.enabled = settings.enableLogging
+}
+
+/** History rows shown and kept — the repositories cap storage at this too. */
+const val HISTORY_LIMIT: Int = 100

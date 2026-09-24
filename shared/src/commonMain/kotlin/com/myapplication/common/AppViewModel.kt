@@ -82,6 +82,7 @@ class AppViewModel(
         coroutineScope.launch {
             try {
                 settings = settingsRepository.getSettings()
+                applySettingsSideEffects(settings)
                 apiClient = buildClient(settings)
                 loadHistory()
             } catch (e: Exception) {
@@ -211,22 +212,21 @@ class AppViewModel(
                 //    classifies the tier first (tierState updates through the
                 //    callback) and refuses to send on FAILED, or on UNATTESTED
                 //    when the user required attestation.
-                //    (`settings.enableHeatmap` no longer changes this request: the
-                //    served API ignored `?heatmap=`. It is reserved for the second
-                //    sealed POST /heatmap call — see below.)
+                //    (No heat map here: the served API ignores `?heatmap=`; the map
+                //    is the second sealed POST /heatmap call — not wired yet.)
                 val apiResult = client.analyzeImage(imageData)
 
                 apiResult.fold(
                     onSuccess = { result ->
                         val processingTime = nowMillis() - startTime
-                        val verdict = result.toVerdict(settings.confidenceThreshold)
+                        val verdict = result.toVerdict()
 
                         val entry = AnalysisHistoryEntry(
                             fileName = fileName,
                             fileSize = fileSize,
                             isAI = result.isAI,
                             confidence = result.uiConfidence,
-                            analysisMode = settings.analysisMode.name,
+                            analysisMode = AnalysisHistoryEntry.MODE_SERVER,
                             processingTimeMs = processingTime,
                             verdict = verdict.name,
                             sha256 = hash,
@@ -238,9 +238,9 @@ class AppViewModel(
                         // base64 field was never served). It is a
                         // second sealed call — POST /heatmap with
                         // `token` = result.heatmapToken, exactly as
-                        // site/demo.js addHeatmapRow() does — to be gated by
-                        // settings.enableHeatmap and kept session-only in
-                        // [sessionHeatmaps] (never persisted).
+                        // site/demo.js addHeatmapRow() does — kept session-only
+                        // in [sessionHeatmaps] (never persisted). A Settings
+                        // toggle comes back only with that call (audit APP-05).
                         // TODO(app): wire that call; until then no map is shown.
                         analysisResult = AnalysisUIState(
                             verdict = verdict,
@@ -295,6 +295,7 @@ class AppViewModel(
         coroutineScope.launch {
             settingsRepository.saveSettings(newSettings)
             settings = newSettings
+            applySettingsSideEffects(newSettings)
             // Swap the client, then release the old one — each ApiClient owns
             // an HttpClient engine; replacing without closing leaked its
             // connection pool/threads on every settings save.
@@ -310,7 +311,7 @@ class AppViewModel(
 
     fun loadHistory() {
         coroutineScope.launch {
-            analysisHistory = historyRepository.getHistory(settings.cacheResultsCount)
+            analysisHistory = historyRepository.getHistory(HISTORY_LIMIT)
         }
     }
 

@@ -177,7 +177,7 @@ class ShareActivity : ComponentActivity() {
 
     @Composable
     fun ResultView(analysisResult: ApiAnalysisResult) {
-        val verdict = analysisResult.toVerdict(settings.confidenceThreshold)
+        val verdict = analysisResult.toVerdict()
         Card(elevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(20.dp),

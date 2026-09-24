@@ -74,7 +74,18 @@ data class AnalysisHistoryEntry(
     companion object {
         /** analysisMode of rows the retired on-device fallback wrote. */
         const val MODE_LOCAL: String = "LOCAL"
+        /** analysisMode of a server verdict (older rows say FAST/BALANCED/DETAILED). */
+        const val MODE_SERVER: String = "SERVER"
+        const val MODE_PROVENANCE: String = "PROVENANCE"
     }
+
+    /** Who decided this row, for the detail screen. */
+    val decidedBy: String
+        get() = when (analysisMode) {
+            MODE_LOCAL -> "Not analyzed (server not reached)"
+            MODE_PROVENANCE -> "This phone — the file's own metadata"
+            else -> "Tayanch server"
+        }
 }
 
 /**

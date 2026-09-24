@@ -8,7 +8,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,13 +42,6 @@ fun DetailScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                 }
             },
-            actions = {
-                IconButton(onClick = {
-                    // Share functionality would go here
-                }) {
-                    Icon(Icons.Default.Share, contentDescription = "Share")
-                }
-            }
         )
 
         Column(
@@ -84,7 +76,7 @@ fun DetailScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                     // Metadata
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         MetadataRow("Analyzed:", entry.formattedTime)
-                        MetadataRow("Mode:", entry.analysisMode)
+                        MetadataRow("Decided by:", entry.decidedBy)
                         MetadataRow("Processing Time:", "${entry.processingTimeMs}ms")
                         MetadataRow("File Size:", entry.formattedSize)
                     }
@@ -144,28 +136,6 @@ fun DetailScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                             }
                         }
                     }
-                }
-            }
-
-            // Notes
-            Card(modifier = Modifier.fillMaxWidth(), elevation = 4.dp) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text("Notes", style = MaterialTheme.typography.h6)
-                    OutlinedTextField(
-                        value = entry.notes,
-                        onValueChange = { },
-                        placeholder = { Text("Add notes about this analysis...") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(100.dp),
-                        enabled = false,
-                        maxLines = 5
-                    )
                 }
             }
 

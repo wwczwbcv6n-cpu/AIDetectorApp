@@ -27,18 +27,16 @@ data class AppSettings(
     val apiBaseUrl: String = "",
     val apiKey: String = "",
     val apiTimeout: Long = 60000L, // milliseconds (union head can take ~25s/image on CPU)
-    val confidenceThreshold: Float = 0.5f,
-    val enableHeatmap: Boolean = true,
+    // Drives Logger.enabled (applySettingsSideEffects). Off by default.
     val enableLogging: Boolean = false,
-    val analysisMode: AnalysisMode = AnalysisMode.FAST,
-    val cacheResultsCount: Int = 100,
     val requireAttestation: Boolean = false,
+    // Removed 2026-09-24 (audit APP-05) because nothing read them:
+    // confidenceThreshold (fed only a legacy no-`verdict` fallback),
+    // enableHeatmap + analysisMode (POST /heatmap is not wired), and
+    // cacheResultsCount (the repositories cap history at 100 anyway; a
+    // negative value crashed start-up, APP-06). Stored JSON that still has
+    // them decodes fine: every repository uses ignoreUnknownKeys.
 ) {
-    enum class AnalysisMode {
-        FAST,      // Quick analysis
-        BALANCED,  // Medium quality
-        DETAILED   // Full heatmap and detailed features
-    }
 
     /** True when the URL is set AND uses a safe scheme.
      *  Plain `http://` is allowed only against localhost, RFC1918 LAN, or a

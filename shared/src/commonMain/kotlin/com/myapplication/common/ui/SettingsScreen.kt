@@ -1,6 +1,5 @@
 package com.myapplication.common.ui
 
-import com.myapplication.common.formatTo
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -12,7 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.myapplication.common.AppViewModel
 import com.myapplication.common.data.AppSettings
 
@@ -30,9 +28,6 @@ fun SettingsScreen(viewModel: AppViewModel) {
     // instantly snapped it back to the default mid-typing.
     var timeoutText by remember(viewModel.settings) {
         mutableStateOf(viewModel.settings.apiTimeout.toString())
-    }
-    var cacheCountText by remember(viewModel.settings) {
-        mutableStateOf(viewModel.settings.cacheResultsCount.toString())
     }
     val isSaving = remember { mutableStateOf(false) }
 
@@ -118,35 +113,9 @@ fun SettingsScreen(viewModel: AppViewModel) {
 
         Divider()
 
-        // Analysis Settings
-        Text("Analysis Settings", style = MaterialTheme.typography.h6)
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Confidence Threshold: ${settings.confidenceThreshold.formatTo(2)}")
-            Spacer(modifier = Modifier.weight(1f))
-        }
-
-        Slider(
-            value = settings.confidenceThreshold,
-            onValueChange = { settings = settings.copy(confidenceThreshold = it) },
-            valueRange = 0f..1f,
-            steps = 9,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Checkbox(
-                checked = settings.enableHeatmap,
-                onCheckedChange = { settings = settings.copy(enableHeatmap = it) }
-            )
-            Text("Enable Heatmap Visualization")
-        }
+        // The threshold slider, heatmap toggle, analysis mode and history size
+        // were removed: none of them changed anything (audit 2026-09-24 APP-05).
+        Text("Diagnostics", style = MaterialTheme.typography.h6)
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -186,55 +155,6 @@ fun SettingsScreen(viewModel: AppViewModel) {
             },
             style = MaterialTheme.typography.caption,
             color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
-        )
-
-        Divider()
-
-        // Analysis Mode Selection
-        Text("Analysis Mode", style = MaterialTheme.typography.h6)
-
-        AppSettings.AnalysisMode.values().forEach { mode ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
-            ) {
-                RadioButton(
-                    selected = settings.analysisMode == mode,
-                    onClick = { settings = settings.copy(analysisMode = mode) }
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text(mode.name)
-                    Text(
-                        when (mode) {
-                            AppSettings.AnalysisMode.FAST -> "Quick analysis, lower accuracy"
-                            AppSettings.AnalysisMode.BALANCED -> "Balanced speed and quality"
-                            AppSettings.AnalysisMode.DETAILED -> "Detailed analysis with heatmap"
-                        },
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-                    )
-                }
-            }
-        }
-
-        Divider()
-
-        // Cache Settings
-        Text("Cache Settings", style = MaterialTheme.typography.h6)
-
-        OutlinedTextField(
-            value = cacheCountText,
-            onValueChange = { text ->
-                cacheCountText = text
-                text.toIntOrNull()?.let { settings = settings.copy(cacheResultsCount = it) }
-            },
-            label = { Text("Max History Entries") },
-            modifier = Modifier.fillMaxWidth(),
-            isError = cacheCountText.toIntOrNull() == null,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
         )
 
         Spacer(modifier = Modifier.height(16.dp))
