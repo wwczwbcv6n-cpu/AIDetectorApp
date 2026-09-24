@@ -51,6 +51,32 @@ class ResultPresentationTest {
     }
 
     @Test
+    fun uncertainSignalsLeanNeutrallyAndNeverSayReadsAi() {
+        // clip_conflict: the union is past its cut (reads "ai"), the sidecar reads
+        // real, the verdict is uncertain. The site says "leans AI" in a neutral
+        // chip (audit 2026-09-23 DISP-3); the app printed "reads ai" and "reads
+        // flag" and drew the AI-like share in accusation red.
+        val r = decode("""{"verdict": "uncertain", "label": "Mixed signals", "confidence": 0,
+            "p_ai": 0.9999,
+            "mix": {"ai_share": 0.55, "real_share": 0.45,
+                    "signals": [{"name": "sensor + content model", "reads": "ai", "in_share": true},
+                                {"name": "edit-region check", "reads": "flag", "in_share": false},
+                                {"name": "content model", "reads": "real", "in_share": true},
+                                {"name": "camera check", "reads": "corroborating"},
+                                {"name": "sidecar", "reads": "quiet"}]}}""")
+        val p = presentResult(r.toVerdict(), r.label, r.confidence, r.mix?.toSummary())
+        val lines = p.signalLines
+        assertEquals("sensor + content model: leans AI", lines[0])
+        assertEquals("edit-region check: leans AI · shown, not averaged", lines[1])
+        assertEquals("content model: reads real", lines[2])
+        assertEquals("camera check: leans AI (with the sensor check)", lines[3])
+        assertEquals("sidecar: quiet", lines[4])
+        assertFalse(p.allText().any { "reads ai" in it || "reads flag" in it }, p.allText().toString())
+        assertEquals(0xFFB8804A, MIX_BAR_AI_LIKE_ARGB)
+        assertTrue(MIX_BAR_AI_LIKE_ARGB != 0xFFC62828, "the mix bar must not use the accusation red")
+    }
+
+    @Test
     fun uncertainWithoutMixShowsNoNumber() {
         val r = decode("""{"verdict": "uncertain", "label": "Uncertain — possible local edit",
                            "confidence": 0, "p_ai": 0.85, "ai_probability": 0.85}""")

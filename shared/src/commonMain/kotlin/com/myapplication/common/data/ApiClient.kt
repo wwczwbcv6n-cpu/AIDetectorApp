@@ -85,7 +85,7 @@ data class ApiMix(
             basis = basis,
             signals = signals.orEmpty().mapNotNull { sg ->
                 val n = sg.name?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                n to (sg.reads ?: "unclear")
+                MixSignal(n, sg.reads ?: "unclear", sg.inShare != false)
             },
         )
     }
@@ -96,8 +96,11 @@ data class MixSummary(
     val aiShare: Float,
     val advisory: Boolean = false,
     val basis: String? = null,
-    val signals: List<Pair<String, String>> = emptyList(),
+    val signals: List<MixSignal> = emptyList(),
 )
+
+/** One model's read inside a `mix` block; [inShare] false = shown, not averaged. */
+data class MixSignal(val name: String, val reads: String, val inShare: Boolean = true)
 
 /**
  * Wire DTO for the served `POST /analyze` JSON response (`demo_api.py`, the

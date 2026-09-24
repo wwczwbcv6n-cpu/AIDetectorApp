@@ -1,6 +1,7 @@
 package com.myapplication.common.ui
 
 import com.myapplication.common.data.AnalysisHistoryEntry
+import com.myapplication.common.data.MixSignal
 import com.myapplication.common.data.MixSummary
 import com.myapplication.common.data.Verdict
 import com.myapplication.common.toUiState
@@ -31,6 +32,29 @@ data class ResultPresentation(
         listOfNotNull(headline, confidenceLine, mixLine, description) + signalLines
 }
 
+/**
+ * ARGB of the AI-like part of the mix bar: the site's neutral copper
+ * `mixbar-lean` (#b8804a), never the accusation red — an uncertain card is
+ * not an accusation (audit 2026-09-23 DISP-3).
+ */
+const val MIX_BAR_AI_LIKE_ARGB: Long = 0xFFB8804A
+
+/**
+ * A model's read as the site words it (site/demo.js addMixRow). The mix block
+ * only reaches the card under an uncertain verdict, so no read is an
+ * accusation: ai/flag/far/leans_ai say "leans AI", never "reads ai".
+ */
+internal fun mixSignalLine(sg: MixSignal): String {
+    val said = when (sg.reads) {
+        "corroborating" -> "leans AI (with the sensor check)"
+        "ai", "flag", "far", "leans_ai" -> "leans AI"
+        "real", "clear", "near" -> "reads real"
+        "quiet" -> "quiet"
+        else -> "reads ${sg.reads}"
+    }
+    return "${sg.name}: $said" + if (!sg.inShare) " \u00B7 shown, not averaged" else ""
+}
+
 private const val MIX_DESCRIPTION =
     "The models disagree or sit between their cuts, so this is not an accusation."
 
@@ -58,7 +82,7 @@ fun presentResult(
         mixLine = mixLine,
         mixAiShare = m?.aiShare,
         description = if (m != null) MIX_DESCRIPTION else v.description,
-        signalLines = m?.signals.orEmpty().map { (name, reads) -> "$name: reads $reads" },
+        signalLines = m?.signals.orEmpty().map(::mixSignalLine),
     )
 }
 

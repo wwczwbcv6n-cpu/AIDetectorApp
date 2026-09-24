@@ -116,7 +116,7 @@ fun VerdictStatusHeader(p: ResultPresentation) {
             Text(text = line, style = MaterialTheme.typography.body2, color = v.accent)
             p.mixAiShare?.let { share ->
                 Row(Modifier.fillMaxWidth().height(8.dp)) {
-                    if (share > 0f) Box(Modifier.weight(share).fillMaxHeight().background(Color(0xFFC62828)))
+                    if (share > 0f) Box(Modifier.weight(share).fillMaxHeight().background(Color(MIX_BAR_AI_LIKE_ARGB)))
                     if (share < 1f) Box(Modifier.weight(1f - share).fillMaxHeight().background(Color(0xFF2E7D32)))
                 }
             }
