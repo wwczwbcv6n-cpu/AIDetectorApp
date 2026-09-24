@@ -1,5 +1,6 @@
 package com.myapplication.common.ui
 
+import com.myapplication.common.data.Verdict
 import com.myapplication.common.formatTo
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
@@ -154,15 +155,18 @@ fun AnalysisScreen(viewModel: AppViewModel) {
                     Divider()
 
                     // AI-generated probability bar, coloured by the verdict band.
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("AI-generated probability", style = MaterialTheme.typography.caption)
-                        LinearProgressIndicator(
-                            progress = result.confidence,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp),
-                            color = result.verdict.visuals().accent
-                        )
+                    // None when the server was not reached: nothing was measured.
+                    if (result.verdict != Verdict.NOT_ANALYZED) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("AI-generated probability", style = MaterialTheme.typography.caption)
+                            LinearProgressIndicator(
+                                progress = result.confidence,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp),
+                                color = result.verdict.visuals().accent
+                            )
+                        }
                     }
 
                     // Processing Time

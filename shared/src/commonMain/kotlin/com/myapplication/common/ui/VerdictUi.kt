@@ -56,6 +56,14 @@ fun Verdict.visuals(): VerdictVisuals = when (this) {
         accent = Color(0xFF6A1B9A),
         container = Color(0xFFF3E5F5),
     )
+    Verdict.NOT_ANALYZED -> VerdictVisuals(
+        badge = "—",
+        title = "Not analyzed",
+        description = "Tayanch's server was not reached, so this image has no verdict. " +
+            "Check your connection and the API URL in Settings, then try again.",
+        accent = Color(0xFF546E7A),
+        container = Color(0xFFECEFF1),
+    )
 }
 
 /** Small coloured square chip — used in result headers and the history list. */
@@ -98,11 +106,14 @@ fun VerdictStatusHeader(verdict: Verdict, aiProbability: Float) {
             VerdictBadge(verdict)
             Column {
                 Text(text = v.title, style = MaterialTheme.typography.h6, color = v.accent)
-                Text(
-                    text = "AI-generated probability: ${(aiProbability * 100).toInt()}%",
-                    style = MaterialTheme.typography.body2,
-                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f),
-                )
+                // No number when nothing was measured.
+                if (verdict != Verdict.NOT_ANALYZED) {
+                    Text(
+                        text = "AI-generated probability: ${(aiProbability * 100).toInt()}%",
+                        style = MaterialTheme.typography.body2,
+                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f),
+                    )
+                }
             }
         }
         Text(

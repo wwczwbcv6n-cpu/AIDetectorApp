@@ -1,5 +1,6 @@
 package com.myapplication.common.ui
 
+import com.myapplication.common.data.Verdict
 import com.myapplication.common.formatTo
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -71,6 +72,13 @@ fun DetailScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                 ) {
                     // Three-band verdict header (matches the live analysis screen).
                     VerdictStatusHeader(result.verdict, result.confidence)
+                    result.detailNote?.let { note ->
+                        Text(
+                            note,
+                            style = MaterialTheme.typography.caption,
+                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.75f)
+                        )
+                    }
 
                     Divider()
 
@@ -83,15 +91,18 @@ fun DetailScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                     }
 
                     // AI-generated probability bar, coloured by the verdict band.
-                    Divider()
-                    Text("AI-generated probability", style = MaterialTheme.typography.caption)
-                    LinearProgressIndicator(
-                        progress = result.confidence,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp),
-                        color = result.verdict.visuals().accent
-                    )
+                    // None for a row that was never analyzed.
+                    if (result.verdict != Verdict.NOT_ANALYZED) {
+                        Divider()
+                        Text("AI-generated probability", style = MaterialTheme.typography.caption)
+                        LinearProgressIndicator(
+                            progress = result.confidence,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp),
+                            color = result.verdict.visuals().accent
+                        )
+                    }
                 }
             }
 

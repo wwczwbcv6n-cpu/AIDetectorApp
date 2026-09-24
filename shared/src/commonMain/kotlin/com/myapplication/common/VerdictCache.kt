@@ -14,6 +14,12 @@ import com.myapplication.common.data.AnalysisHistoryEntry
  * accusations would replay as "Cached result" for the same bytes forever.
  * A file that still confesses its generation is re-decided by the current
  * [MetadataAnalyzer] a moment later, so nothing true is lost.
+ *
+ * LOCAL rows (the retired on-device fallback) never count either: they are
+ * not a verdict, and reopen as NOT_ANALYZED (audit 2026-09-24 APP-01).
  */
 fun cachedVerdict(history: List<AnalysisHistoryEntry>, hash: String): AnalysisHistoryEntry? =
-    history.firstOrNull { it.sha256 == hash && it.analysisMode != "PROVENANCE" }
+    history.firstOrNull {
+        it.sha256 == hash && it.analysisMode != "PROVENANCE" &&
+            it.analysisMode != AnalysisHistoryEntry.MODE_LOCAL
+    }

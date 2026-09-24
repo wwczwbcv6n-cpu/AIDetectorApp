@@ -32,15 +32,15 @@ data class DecodedImage(
 expect fun decodeImage(bytes: ByteArray, maxSide: Int = 256): DecodedImage
 
 /**
- * On-device AI-image detector using simple statistical heuristics.
+ * On-device statistical heuristics (no model file, pure math).
  *
- * No model file. Pure math. Runs on every platform the app ships to.
- * Each feature returns [0,1] where higher means "more AI-like"; the final
- * confidence is a calibrated weighted sum.
- *
- * This is the v1 detector. When the trained UnifiedFusionNet checkpoint is
- * exported and shipped, the per-feature weights will be replaced with a
- * learned aggregator — same pipeline, smarter combiner.
+ * UNMEASURED and NOT a detector: the weights are hand-set, nothing about them
+ * is calibrated, and an approximate port on data/api_bench could never reach
+ * its own AI threshold from pixels (AI pixel-score q90 0.35 vs the 0.588 it
+ * needs; audit 2026-09-24 APP-01). The app therefore never shows its output
+ * as a verdict — an unreachable server reads "Not analyzed" (see
+ * failureOutcome). Kept only as a research hook; measure it on data/api_bench
+ * before it is ever shown to a user again.
  */
 class HeuristicAIDetector {
 
@@ -99,15 +99,12 @@ class HeuristicAIDetector {
         features["metadata_ai_score"] = meta.aiScore
         features["metadata_camera_score"] = meta.cameraScore
 
-        // 3. Fusion. Generator signature dominates; camera signature anchors
-        //    the score below threshold. Otherwise pixel score with a small
-        //    metadata-derived prior.
+        // 3. Fusion. A generator confession dominates; otherwise pixel score
+        //    with a small metadata-derived prior. EXIF camera Make does NOT
+        //    anchor anything: EXIF is trivially written (audit APP-11).
         val (confidence, explanation) = when {
             meta.generatorMatch != null ->
                 0.85f to "AI generator signature detected: ${meta.generatorMatch}"
-            meta.cameraMatch != null ->
-                (pixelScore * 0.4f).coerceIn(0f, 0.30f) to
-                    "Camera metadata detected: ${meta.cameraMatch}"
             else -> {
                 val blended = (pixelScore * 0.85f + meta.aiScore * 0.15f)
                     .coerceIn(0f, 1f)

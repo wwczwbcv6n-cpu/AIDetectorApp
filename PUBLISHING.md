@@ -8,7 +8,7 @@ This doc covers shipping `AIDetectorApp` to the Google Play Store and Apple App 
 
 **Works (2026-09-19):**
 - API path — the product. `ApiClient` seals the request (TSE2, HPKE via BouncyCastle), classifies the server's `/pubkey` attestation state against the pinned policy, posts to `/analyze` with the X-API-Key, and decodes the served schema (`ApiAnalysisResult`, pinned by the main repo's `contract/api_v2.json`).
-- Offline estimate — `HeuristicAIDetector` (7 features, no weights file) runs only when the API call fails or no server is configured, and is always labelled as an offline estimate.
+- No offline verdict — when the server is not reached (offline, timeout, no server configured) the app shows "Not analyzed" with no percentage. The old `HeuristicAIDetector` fallback was never measured and cleared most AI photos as "Likely authentic" (audit 2026-09-24 APP-01); only a file that confesses its own generation in metadata is still decided on the device.
 - History, settings, image picker, share intent — functional.
 - Gates: `./gradlew :shared:desktopTest` (DTO parsing + TSE2 vectors) and `./gradlew :androidApp:assembleDebug` must be green before a build is uploaded.
 

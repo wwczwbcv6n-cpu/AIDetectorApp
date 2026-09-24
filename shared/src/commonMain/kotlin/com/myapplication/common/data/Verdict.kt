@@ -16,7 +16,15 @@ enum class Verdict {
     AUTHENTIC,   // server "real"      — likely a genuine photo
     AI,          // server "ai"        — likely AI-generated
     UNCERTAIN,   // server "uncertain" — not enough signal; abstain
-    TAMPERED;    // server "tampered"  — localized edit / manipulation
+    TAMPERED,    // server "tampered"  — localized edit / manipulation
+    /**
+     * Tayanch's server was not reached (offline, timeout, no server URL, the
+     * client not built yet), so there is NO verdict and no probability. Never
+     * produced from server data. The on-device heuristic used to fill this
+     * gap with "Likely authentic"; it was never measured and an approximate
+     * port cleared ~97% of AI photos (audit 2026-09-24 APP-01).
+     */
+    NOT_ANALYZED;
 
     /** True only for a confident AI/tamper call — never for [UNCERTAIN]. */
     val isAccusation: Boolean get() = this == AI || this == TAMPERED

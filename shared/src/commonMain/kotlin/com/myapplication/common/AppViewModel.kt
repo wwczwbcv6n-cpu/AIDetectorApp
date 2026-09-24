@@ -7,7 +7,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import com.myapplication.common.data.AnalysisHistoryEntry
 import com.myapplication.common.data.AnalysisHistoryRepository
 import com.myapplication.common.data.ApiClient
-import com.myapplication.common.data.ApiError
 import com.myapplication.common.data.ApiException
 import com.myapplication.common.data.AppSettings
 import com.myapplication.common.data.SettingsRepository
@@ -57,10 +56,9 @@ class AppViewModel(
      */
     var tierState by mutableStateOf<TierState?>(null)
 
-    private val heuristicDetector = HeuristicAIDetector()
     // Compose's Snapshot system rejects mutableStateOf writes from background
     // dispatchers when the state was created on Main. We launch on Main and
-    // shift any CPU-heavy block (heuristic analysis, repo IO) into
+    // shift any CPU-heavy block (hashing, metadata scan, decode) into
     // withContext(Default).
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var apiClient: ApiClient? = null
@@ -197,10 +195,10 @@ class AppViewModel(
 
                 val client = apiClient
                 if (client == null) {
-                    // Settings not yet loaded / client not built — fall back to the
-                    // on-device estimate but say so, don't pretend it's the server.
-                    analyzeWithLocalModel(imageData, fileName, fileSize, offline = true,
-                                          sha256 = hash)
+                    // Settings not yet loaded / client not built: no verdict
+                    // at all (the old on-device estimate read "Likely
+                    // authentic" on AI photos — audit 2026-09-24 APP-01).
+                    showFailure(serverNotReadyOutcome())
                     return@launch
                 }
 
@@ -253,7 +251,10 @@ class AppViewModel(
                         loadHistory()
                     },
                     onFailure = { e ->
-                        handleAnalyzeFailure(e, imageData, fileName, fileSize, hash)
+                        // Type only — never the message, which can echo server strings.
+                        Logger.warn("analyze API failed: " +
+                            ((e as? ApiException)?.apiError?.let { it::class.simpleName } ?: e::class.simpleName))
+                        showFailure(failureOutcome(e))
                     }
                 )
             } catch (e: Exception) {
@@ -268,101 +269,16 @@ class AppViewModel(
     }
 
     /**
-     * Map a typed [ApiError] to a visible UI state (#2). Transport-level
-     * failures (offline / timeout / not-configured) optionally fall back to the
-     * on-device heuristic — but ALWAYS clearly labelled as an offline estimate,
-     * never silently substituted for the server's verdict. Auth / parse / server
-     * errors do NOT fall back: hiding them behind the heuristic is what made the
-     * server look like it "worked" while never being used.
-     *
-     * Attestation / envelope errors ([ApiError.Attestation],
-     * [ApiError.AttestationRequired], [ApiError.Protocol], ...) are shown as
-     * they are: nothing was sent (or nothing was decoded), and no fallback
-     * runs — the user asked for a server verdict under a stated tier and did
-     * not get one.
+     * Show a failed analysis (#2). An unreachable server (offline / timeout /
+     * not configured) gets a NOT_ANALYZED card and NO history row; every other
+     * typed error (auth, attestation, server error, ...) is shown as it is.
+     * Nothing ever falls back to an on-device verdict: the heuristic that used
+     * to was never measured and passed AI photos as "Likely authentic"
+     * (audit 2026-09-24 APP-01). See [failureOutcome].
      */
-    private suspend fun handleAnalyzeFailure(
-        e: Throwable,
-        imageData: ByteArray,
-        fileName: String,
-        fileSize: Long,
-        sha256: String? = null,
-    ) {
-        val apiError = (e as? ApiException)?.apiError
-        // Type only — never the message, which can echo server strings.
-        Logger.warn("analyze API failed: ${apiError?.let { it::class.simpleName } ?: e::class.simpleName}")
-        when (apiError) {
-            is ApiError.Network,
-            is ApiError.Timeout,
-            is ApiError.Configuration -> {
-                // Offline-style failure → on-device estimate, clearly marked.
-                errorMessage = apiError.userMessage + " Showing an on-device estimate."
-                analyzeWithLocalModel(imageData, fileName, fileSize, offline = true,
-                                      sha256 = sha256)
-            }
-            null -> {
-                // Non-ApiException (shouldn't happen) — surface generically.
-                errorMessage = "Analysis failed: ${e.message ?: "unknown error"}"
-            }
-            else -> {
-                // Auth / ClientError / ServerError / Parse / Unknown /
-                // Attestation* / StaleTimestamp / KeyRotation / Protocol / Envelope — show it.
-                errorMessage = apiError.userMessage
-            }
-        }
-    }
-
-    /**
-     * Run the on-device heuristic detector. [offline] = true means this is an
-     * explicit fallback for a transport failure (an informational [errorMessage]
-     * has already been set by the caller and must be preserved); false means a
-     * directly-requested local analysis.
-     */
-    private suspend fun analyzeWithLocalModel(
-        imageData: ByteArray,
-        fileName: String,
-        fileSize: Long,
-        offline: Boolean = false,
-        sha256: String? = null,
-    ) {
-        try {
-            val startTime = nowMillis()
-            val result = withContext(Dispatchers.Default) {
-                heuristicDetector.analyze(imageData)
-            }
-            val processingTime = nowMillis() - startTime
-            val verdict = Verdict.fromBoolean(result.isAI)
-
-            analysisResult = AnalysisUIState(
-                verdict = verdict,
-                confidence = result.confidence,
-                processingTimeMs = processingTime,
-                processedImage = result.processedImage,
-                detailedFeatures = result.features,
-                detailNote = result.explanation.takeIf { it.isNotBlank() }
-            )
-
-            // NOTE: deliberately NO sha256 on LOCAL entries — the heuristic is
-            // a weak offline estimate, and caching it under the byte hash
-            // would shadow a proper server verdict for the same image later.
-            val entry = AnalysisHistoryEntry(
-                fileName = fileName,
-                fileSize = fileSize,
-                isAI = result.isAI,
-                confidence = result.confidence,
-                analysisMode = "LOCAL",
-                processingTimeMs = processingTime,
-                verdict = verdict.name
-            )
-            historyRepository.addEntry(entry)
-            loadHistory()
-        } catch (e: Exception) {
-            Logger.error("Local analysis failed", e)
-            // Don't clobber a more-informative server error when this was a fallback.
-            if (!offline || errorMessage == null) {
-                errorMessage = "Local analysis failed: ${e.message ?: "unknown error"}"
-            }
-        }
+    private fun showFailure(outcome: FailureOutcome) {
+        analysisResult = outcome.state
+        errorMessage = outcome.errorMessage
     }
 
     fun updateSettings(newSettings: AppSettings) {
@@ -412,12 +328,7 @@ class AppViewModel(
 
     fun selectHistoryEntry(entry: AnalysisHistoryEntry) {
         selectedHistoryEntry = entry
-        analysisResult = AnalysisUIState(
-            verdict = entry.verdictBand,
-            confidence = entry.confidence,
-            processingTimeMs = entry.processingTimeMs,
-            heatmapImage = sessionHeatmaps[entry.id]
-        )
+        analysisResult = entry.toUiState(sessionHeatmaps[entry.id])
     }
 
     fun testApiConnection() {

@@ -34,9 +34,15 @@ data class AnalysisHistoryEntry(
     // §10: byte hash primary, never a perceptual hash). Null on old entries.
     val sha256: String? = null
 ) {
-    /** The three-band [Verdict], preferring the persisted name over [isAI]. */
+    /**
+     * The three-band [Verdict], preferring the persisted name over [isAI].
+     * A LOCAL row was written by the retired on-device fallback, which never
+     * measured anything: it reopens as [Verdict.NOT_ANALYZED], whatever band
+     * it stored (audit 2026-09-24 APP-01).
+     */
     val verdictBand: Verdict
-        get() = Verdict.fromName(verdict) ?: Verdict.fromBoolean(isAI)
+        get() = if (analysisMode == MODE_LOCAL) Verdict.NOT_ANALYZED
+            else Verdict.fromName(verdict) ?: Verdict.fromBoolean(isAI)
 
     val formattedTime: String
         get() = formatTimestamp(timestamp)
@@ -54,7 +60,13 @@ data class AnalysisHistoryEntry(
             Verdict.AI -> "Likely AI-generated"
             Verdict.UNCERTAIN -> "Uncertain"
             Verdict.TAMPERED -> "Possibly edited"
+            Verdict.NOT_ANALYZED -> "Not analyzed"
         }
+
+    companion object {
+        /** analysisMode of rows the retired on-device fallback wrote. */
+        const val MODE_LOCAL: String = "LOCAL"
+    }
 }
 
 /**

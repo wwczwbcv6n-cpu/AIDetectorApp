@@ -12,8 +12,8 @@ import kotlinx.serialization.Serializable
  * `apiKey` carries the X-API-Key header value. The production API
  * (api_gateway.py, GATEWAY_ENABLED=1) REQUIRES it on every /analyze call:
  * a keyless request is a 401. Keys are issued at https://tayanch.com/api.
- * Without a key the app can only show the on-device offline estimate,
- * which is a fallback, not the product (see AppViewModel.analyzeWithLocalModel).
+ * Without a working server the app shows "Not analyzed" — there is no
+ * on-device verdict (audit 2026-09-24 APP-01; see failureOutcome).
  *
  * `requireAttestation` (default false): when true the upload proceeds only
  * if the server's `/pubkey` evidence VERIFIES against the pinned policy;

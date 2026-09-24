@@ -177,6 +177,44 @@ class MetadataAnalyzerTest {
         assertEquals("iptc_ai_declared", MetadataAnalyzer.analyze(bytes).generatorMatch)
     }
 
+    // ── camera provenance comes only from parsed EXIF IFD0 Make ──────────
+    // The old camera side was a substring scan of the first 64 KB for 'SM-',
+    // 'DJI', 'Apple', ... — 31/556 AI photos on data/api_bench hit one by
+    // chance inside compressed data (audit 2026-09-24 APP-11), and the app
+    // then printed "Camera metadata detected: samsung" on an AI image.
+
+    @Test
+    fun samsungModelPrefixInScanDataIsNotACamera() {
+        val bytes = jpeg(scan = "..\u0012SM-\u0099..DJI..Apple..Google".toByteArray(Charsets.ISO_8859_1))
+        assertNull(MetadataAnalyzer.analyze(bytes).cameraMatch)
+    }
+
+    @Test
+    fun makeNamedInXmpCaptionIsNotACamera() {
+        val bytes = jpeg(app1Xmp("<dc:description>Shot on an iPhone? No — Canon SM-</dc:description>"))
+        assertNull(MetadataAnalyzer.analyze(bytes).cameraMatch)
+    }
+
+    @Test
+    fun exifMakeSamsungIsACamera() {
+        val bytes = jpeg(app1ExifAscii(0x010F, "samsung"))
+        assertEquals("samsung", MetadataAnalyzer.analyze(bytes).cameraMatch)
+    }
+
+    @Test
+    fun littleEndianExifMakeIsACamera() {
+        val bytes = jpeg(app1ExifAscii(0x010F, "NIKON CORPORATION", littleEndian = true))
+        assertEquals("nikon", MetadataAnalyzer.analyze(bytes).cameraMatch)
+    }
+
+    @Test
+    fun exifArtistIsNotACamera() {
+        val bytes = jpeg(app1Exif(artist = "Apple Pixel Samsung"))
+        val r = MetadataAnalyzer.analyze(bytes)
+        assertNull(r.cameraMatch)
+        assertEquals(true, r.hasExif)
+    }
+
     // ── byte builders ────────────────────────────────────────────────────
 
     private fun segment(marker: Int, payload: ByteArray): ByteArray {
@@ -198,6 +236,25 @@ class MetadataAnalyzerTest {
         u16(1)                                   // one IFD entry
         u16(0x013B); u16(2); u32(value.size); u32(8 + 2 + 12 + 4)
         u32(0)                                   // no next IFD
+        tiff.write(value)
+        return segment(0xE1, "Exif\u0000\u0000".toByteArray(Charsets.ISO_8859_1) + tiff.toByteArray())
+    }
+
+    /** APP1 Exif whose IFD0 holds one ASCII tag, in either byte order. */
+    private fun app1ExifAscii(tag: Int, text: String, littleEndian: Boolean = false): ByteArray {
+        val value = (text + "\u0000").toByteArray(Charsets.ISO_8859_1)
+        val tiff = ByteArrayOutputStream()
+        fun u16(v: Int) {
+            if (littleEndian) { tiff.write(v and 0xFF); tiff.write(v ushr 8 and 0xFF) }
+            else { tiff.write(v ushr 8 and 0xFF); tiff.write(v and 0xFF) }
+        }
+        fun u32(v: Int) {
+            if (littleEndian) { u16(v and 0xFFFF); u16(v ushr 16) } else { u16(v ushr 16); u16(v and 0xFFFF) }
+        }
+        tiff.write((if (littleEndian) "II" else "MM").toByteArray()); u16(0x2A); u32(8)
+        u16(1)
+        u16(tag); u16(2); u32(value.size); u32(8 + 2 + 12 + 4)
+        u32(0)
         tiff.write(value)
         return segment(0xE1, "Exif\u0000\u0000".toByteArray(Charsets.ISO_8859_1) + tiff.toByteArray())
     }

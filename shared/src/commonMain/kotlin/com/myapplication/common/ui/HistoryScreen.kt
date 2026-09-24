@@ -1,5 +1,6 @@
 package com.myapplication.common.ui
 
+import com.myapplication.common.data.Verdict
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -195,10 +196,14 @@ fun HistoryEntryCard(
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(
-                        text = "Confidence: ${(entry.confidence * 100).toInt()}%",
-                        fontSize = 11.sp
-                    )
+                    if (entry.verdictBand != Verdict.NOT_ANALYZED) {
+                        Text(
+                            text = "Confidence: ${(entry.confidence * 100).toInt()}%",
+                            fontSize = 11.sp
+                        )
+                    } else {
+                        Text(text = entry.statusText, fontSize = 11.sp)
+                    }
                     Text(
                         text = "${entry.processingTimeMs}ms",
                         fontSize = 11.sp,
