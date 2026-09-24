@@ -398,6 +398,12 @@ class ApiClient(
             )
         }
 
+        // Refuse an oversized file before sealing (a second full copy) or
+        // sending it: the server would answer 413 after the upload (APP-07).
+        uploadTooLargeMessage(imageData.size.toLong())?.let { msg ->
+            return Result.failure(ApiException(ApiError.ClientError(413, msg)))
+        }
+
         return try {
             analyzeSealed(imageData)
         } catch (e: HttpRequestTimeoutException) {

@@ -15,6 +15,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myapplication.common.MetadataAnalyzer
+import com.myapplication.common.PickedImage
+import com.myapplication.common.readPickedImage
 import com.myapplication.common.data.ApiAnalysisResult
 import com.myapplication.common.data.ApiClient
 import com.myapplication.common.data.ApiError
@@ -102,9 +104,13 @@ class ShareActivity : ComponentActivity() {
                 if (api == null) api = ApiClient(settings)
 
                 result = withContext(Dispatchers.IO) {
-                    val imageData = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    // Size-checked before and while reading (audit APP-07): a
+                    // >40 MB file is refused here, not after a wasted upload.
+                    val picked = readPickedImage(this@ShareActivity, uri)
+                    val imageData = (picked as? PickedImage.Picked)?.bytes
                     if (imageData == null) {
-                        Result.failure(ApiException(ApiError.Unknown("Couldn't read the shared image.")))
+                        val msg = (picked as? PickedImage.Refused)?.message ?: "Couldn't read the shared image."
+                        Result.failure(ApiException(ApiError.ClientError(413, msg)))
                     } else {
                         // Provenance first (research §7): a file that confesses
                         // its own generation (A1111 / ComfyUI settings chunk,

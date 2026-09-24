@@ -1,5 +1,6 @@
 package com.myapplication.common.ui
 
+import com.myapplication.common.PickedImage
 import com.myapplication.common.formatTo
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
@@ -70,13 +71,17 @@ fun AnalysisScreen(viewModel: AppViewModel) {
         // also guards against this, but disabling gives the user clear feedback.
         Button(
             onClick = {
-                imagePicker.pickImage { imageBytesList ->
-                    imageBytesList.firstOrNull()?.let { imageBytes ->
-                        viewModel.analyzeImage(
-                            imageBytes,
-                            fileName = "selected_image.jpg",
-                            fileSize = imageBytes.size.toLong()
+                // One image, size-checked before it is read in full, read off
+                // the main thread on Android (audit 2026-09-24 APP-07).
+                imagePicker.pickImageForAnalysis { picked ->
+                    when (picked) {
+                        is PickedImage.Picked -> viewModel.analyzeImage(
+                            picked.bytes,
+                            fileName = picked.displayName ?: "image",
+                            fileSize = picked.bytes.size.toLong()
                         )
+                        is PickedImage.Refused -> viewModel.showPickRefusal(picked.message)
+                        PickedImage.Cancelled -> Unit
                     }
                 }
             },

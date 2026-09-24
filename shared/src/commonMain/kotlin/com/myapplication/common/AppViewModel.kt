@@ -10,6 +10,7 @@ import com.myapplication.common.data.ApiClient
 import com.myapplication.common.data.ApiException
 import com.myapplication.common.data.AppSettings
 import com.myapplication.common.data.MixSummary
+import com.myapplication.common.data.uploadTooLargeMessage
 import com.myapplication.common.data.SettingsRepository
 import com.myapplication.common.data.Verdict
 import com.myapplication.common.nowMillis
@@ -125,6 +126,10 @@ class AppViewModel(
         // a double-tap can't fire two overlapping analyses / two history writes.
         if (isLoading) {
             Logger.debug("analyzeImage ignored — a request is already in flight")
+            return
+        }
+        uploadTooLargeMessage(imageData.size.toLong())?.let { msg ->
+            showPickRefusal(msg)
             return
         }
         coroutineScope.launch {
@@ -347,6 +352,13 @@ class AppViewModel(
     fun selectHistoryEntry(entry: AnalysisHistoryEntry) {
         selectedHistoryEntry = entry
         analysisResult = entry.toUiState(sessionHeatmaps[entry.id])
+    }
+
+    /** A pick the app refused before reading or sending (too large, unreadable). */
+    fun showPickRefusal(message: String) {
+        analysisResult = null
+        detectedImage = null
+        errorMessage = message
     }
 
     /** Settings -> "Test API Connection": the line shown under the button, and whether it passed. */
