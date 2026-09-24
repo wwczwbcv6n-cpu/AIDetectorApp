@@ -22,6 +22,8 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.utils.io.errors.IOException
+import com.myapplication.common.nowMillis
+import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -313,7 +315,29 @@ class ApiClient(
     private val hpke: HpkePrimitives = platformHpke(),
     verifier: AttestationVerifier? = null,
     engine: HttpClientEngine? = null,
+    private val backoff: Backoff = Backoff(),
 ) {
+    /**
+     * Cold-start / busy tolerance (audit 2026-09-24 APP-09). The served API
+     * scales to zero (deploy/modal_app.py min_containers=0) and runs one
+     * container (max_containers=1). Before the first upload after
+     * [warmForMs] of silence the client waits on GET /health for up to
+     * [healthBudgetMs] (the site's budget, site/demo.js), backing off from
+     * [firstDelayMs]; a busy / bad-gateway /analyze answer is retried ONCE
+     * after [retryDelayMs] with a fresh key and envelope.
+     * The 60 s budget mirrors the site; the Modal cold-start time to the
+     * first /pubkey answer has not been measured yet (verifier note).
+     */
+    class Backoff(
+        val healthBudgetMs: Long = 60_000L,
+        val firstDelayMs: Long = 1_000L,
+        val retryDelayMs: Long = 2_000L,
+        val warmForMs: Long = 5 * 60_000L,
+    )
+
+    /** Until when the server counts as warm (nowMillis); 0 = never checked. */
+    private var warmUntil = 0L
+
     /** Called with every classification, on the caller's dispatcher; the UI shows exactly one state. */
     var onTierState: ((TierState) -> Unit)? = null
 
@@ -411,19 +435,85 @@ class ApiClient(
             return Result.failure(ApiException(ApiError.ClientError(413, msg)))
         }
 
-        return try {
-            analyzeSealed(imageData)
-        } catch (e: HttpRequestTimeoutException) {
-            Result.failure(ApiException(ApiError.Timeout))
-        } catch (e: IOException) {
-            Result.failure(ApiException(ApiError.Network))
-        } catch (e: ApiException) {
-            Result.failure(e)
-        } catch (e: Exception) {
-            // Unknown — do NOT leak the raw message to the UI; keep it generic.
-            Result.failure(ApiException(ApiError.Unknown(e.message)))
+        var retried = false
+        while (true) {
+            val result = try {
+                warmUp()
+                analyzeSealed(imageData)
+            } catch (e: HttpRequestTimeoutException) {
+                Result.failure(ApiException(ApiError.Timeout))
+            } catch (e: IOException) {
+                Result.failure(ApiException(ApiError.Network))
+            } catch (e: ApiException) {
+                Result.failure(e)
+            } catch (e: Exception) {
+                // Unknown — do NOT leak the raw message to the UI; keep it generic.
+                Result.failure(ApiException(ApiError.Unknown(e.message)))
+            }
+            val err = (result.exceptionOrNull() as? ApiException)?.apiError
+            if (!retried && err is ApiError.ServerError && isRetryable(err)) {
+                // Rejected before any work was done (gateway slot full, or the
+                // proxy lost the container): one more try, re-keyed and re-sealed.
+                retried = true
+                warmUntil = 0L
+                delay(backoff.retryDelayMs)
+                continue
+            }
+            return result
         }
     }
+
+    /**
+     * 503 'server busy — retry in a moment' (the gateway's concurrency slot;
+     * nothing was billed) and 502 (the proxy lost the container). NOT 503
+     * 'daily capacity' (retrying cannot help) and NOT 504 (the server may
+     * still finish — and bill — the first request).
+     */
+    private fun isRetryable(e: ApiError.ServerError): Boolean =
+        e.status == 502 || (e.status == 503 && e.serverMessage?.contains("busy", ignoreCase = true) == true)
+
+    /**
+     * Wait for a scaled-to-zero server (APP-09): GET /health until it answers
+     * 2xx, backing off on 502/503/504 or a timed-out attempt for up to
+     * [Backoff.healthBudgetMs]. Connection errors get two quick retries only
+     * (an offline phone should hear "Not analyzed" in seconds, not a minute).
+     * Any other answer ends the wait; the /pubkey step then reports it.
+     */
+    private suspend fun warmUp() {
+        if (nowMillis() < warmUntil) return
+        val start = nowMillis()
+        var wait = backoff.firstDelayMs
+        var ioFailures = 0
+        while (true) {
+            val again: Boolean = try {
+                val r = httpClient.get("$baseUrl/health") {
+                    timeout { requestTimeoutMillis = HEALTH_ATTEMPT_MS }
+                }
+                when (r.status.value) {
+                    in 200..299 -> {
+                        warmUntil = nowMillis() + backoff.warmForMs
+                        return
+                    }
+                    502, 503, 504 -> true
+                    else -> return
+                }
+            } catch (e: HttpRequestTimeoutException) {
+                true
+            } catch (e: IOException) {
+                ++ioFailures <= 2
+            }
+            if (!again || nowMillis() - start + wait > backoff.healthBudgetMs) return
+            delay(wait)
+            wait = (wait * 2).coerceAtMost(8_000L)
+        }
+    }
+
+    /**
+     * /analyze timeout: the analysis budget plus the upload at a slow
+     * 256 kbit/s uplink (32 bytes/ms). A fixed total used to cover both, so
+     * a 10 MB original on a ~1 Mbit/s uplink could never finish (APP-09).
+     */
+    fun uploadTimeoutMs(bytes: Long): Long = settings.effectiveTimeoutMs + bytes.coerceAtLeast(0L) / 32L
 
     private suspend fun analyzeSealed(imageData: ByteArray): Result<ApiAnalysisResult> {
         // 1. Fresh key + evidence bound to a fresh 32-byte nonce, fetched immediately
@@ -451,7 +541,7 @@ class ApiClient(
                     header(HEADER_NONCE, nonceHex)
                     accept(ContentType.parse(SECURE_V2))
                     accept(ContentType.Application.Json)
-                    timeout { requestTimeoutMillis = settings.effectiveTimeoutMs }
+                    timeout { requestTimeoutMillis = uploadTimeoutMs(sealed.envelope.size.toLong()) }
                     // No query string: the route in the envelope AAD is the bare
                     // path (SPEC §2), and the server reads no /analyze query params.
                     setBody(envelopePart(sealed.envelope))
@@ -677,7 +767,8 @@ class ApiClient(
         const val ROUTE_PUBKEY = "/pubkey"
         const val HEADER_NONCE = "X-Tayanch-Nonce"
         const val SECURE_V2 = "application/vnd.tayanch.secure+v2"
-        private const val PUBKEY_TIMEOUT_MS = 10_000L
+        private const val PUBKEY_TIMEOUT_MS = 20_000L
+        private const val HEALTH_ATTEMPT_MS = 20_000L
         private const val PROBE_TIMEOUT_MS = 15_000L
         /**
          * Key probe for [testConnection]: a served route that is NOT in the
