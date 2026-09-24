@@ -156,7 +156,7 @@ actual class AnalysisHistoryRepository {
         writeAll(if (updated.size > maxEntries) updated.take(maxEntries) else updated)
     }
 
-    actual suspend fun getHistory(limit: Int): List<AnalysisHistoryEntry> = readAll().take(limit)
+    actual suspend fun getHistory(limit: Int): List<AnalysisHistoryEntry> = readAll().take(com.myapplication.common.safeHistoryLimit(limit))
 
     actual suspend fun getEntry(id: String): AnalysisHistoryEntry? = readAll().find { it.id == id }
 

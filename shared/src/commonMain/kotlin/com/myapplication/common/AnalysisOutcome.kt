@@ -7,6 +7,7 @@ import com.myapplication.common.data.ApiException
 import com.myapplication.common.data.AppSettings
 import com.myapplication.common.data.MixSummary
 import com.myapplication.common.data.Verdict
+import kotlinx.coroutines.CoroutineExceptionHandler
 
 /**
  * What the analysis screen shows after a failed server call: an optional
@@ -87,3 +88,17 @@ fun applySettingsSideEffects(settings: AppSettings) {
 
 /** History rows shown and kept — the repositories cap storage at this too. */
 const val HISTORY_LIMIT: Int = 100
+
+/** A history limit every repository can `take()` without throwing (APP-06). */
+fun safeHistoryLimit(limit: Int): Int = limit.coerceIn(0, HISTORY_LIMIT)
+
+/**
+ * Installed on the ViewModel scope (audit 2026-09-24 APP-06): an exception in
+ * any launch is logged (type only) and handed to [onError] instead of killing
+ * the process — a bad persisted value used to crash every start-up.
+ */
+fun viewModelExceptionHandler(onError: (Throwable) -> Unit): CoroutineExceptionHandler =
+    CoroutineExceptionHandler { _, t ->
+        Logger.warn("uncaught in ViewModel scope: ${t::class.simpleName}")
+        onError(t)
+    }

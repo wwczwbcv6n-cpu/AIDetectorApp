@@ -45,7 +45,7 @@ actual class AnalysisHistoryRepository {
             val content = historyFile.readText()
             val all: List<AnalysisHistoryEntry> = json.decodeFromString(content)
             if (content.contains(LEGACY_HEATMAP_FIELD)) historyFile.writeText(json.encodeToString(all))
-            all.take(limit)
+            all.take(com.myapplication.common.safeHistoryLimit(limit))
         } catch (e: Exception) {
             // Type only — kotlinx decode errors quote the stored JSON.
             Logger.warn("history read failed: ${e::class.simpleName}")

@@ -26,7 +26,7 @@ import kotlinx.serialization.Serializable
 data class AppSettings(
     val apiBaseUrl: String = "",
     val apiKey: String = "",
-    val apiTimeout: Long = 60000L, // milliseconds (union head can take ~25s/image on CPU)
+    val apiTimeout: Long = DEFAULT_TIMEOUT_MS, // milliseconds (union head can take ~25s/image on CPU)
     // Drives Logger.enabled (applySettingsSideEffects). Off by default.
     val enableLogging: Boolean = false,
     val requireAttestation: Boolean = false,
@@ -37,6 +37,18 @@ data class AppSettings(
     // negative value crashed start-up, APP-06). Stored JSON that still has
     // them decodes fine: every repository uses ignoreUnknownKeys.
 ) {
+
+    /**
+     * The request timeout actually used: a non-positive value (which Ktor
+     * rejects, surfacing as "Analysis failed unexpectedly.") falls back to the
+     * default, anything else is kept within 5 s .. 10 min (audit APP-06).
+     */
+    val effectiveTimeoutMs: Long
+        get() = if (apiTimeout <= 0L) DEFAULT_TIMEOUT_MS else apiTimeout.coerceIn(5_000L, 600_000L)
+
+    companion object {
+        const val DEFAULT_TIMEOUT_MS: Long = 60_000L
+    }
 
     /** True when the URL is set AND uses a safe scheme.
      *  Plain `http://` is allowed only against localhost, RFC1918 LAN, or a

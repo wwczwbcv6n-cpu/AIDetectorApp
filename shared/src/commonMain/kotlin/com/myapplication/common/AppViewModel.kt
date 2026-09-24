@@ -67,7 +67,14 @@ class AppViewModel(
     // dispatchers when the state was created on Main. We launch on Main and
     // shift any CPU-heavy block (hashing, metadata scan, decode) into
     // withContext(Default).
-    private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    // The handler keeps one failing launch from killing the process (APP-06).
+    private val coroutineScope = CoroutineScope(
+        Dispatchers.Main + SupervisorJob() + viewModelExceptionHandler { t ->
+            isLoading = false
+            isTestingConnection = false
+            errorMessage = "Something went wrong (${t::class.simpleName}). Try again."
+        }
+    )
     private var apiClient: ApiClient? = null
 
     /**

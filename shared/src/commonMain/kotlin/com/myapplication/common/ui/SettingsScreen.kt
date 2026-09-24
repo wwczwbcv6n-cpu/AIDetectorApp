@@ -83,11 +83,11 @@ fun SettingsScreen(viewModel: AppViewModel) {
             value = timeoutText,
             onValueChange = { text ->
                 timeoutText = text
-                text.toLongOrNull()?.let { settings = settings.copy(apiTimeout = it) }
+                text.toLongOrNull()?.takeIf { it > 0 }?.let { settings = settings.copy(apiTimeout = it) }
             },
             label = { Text("Timeout (ms)") },
             modifier = Modifier.fillMaxWidth(),
-            isError = timeoutText.toLongOrNull() == null,
+            isError = (timeoutText.toLongOrNull() ?: 0L) <= 0L,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
         )
 

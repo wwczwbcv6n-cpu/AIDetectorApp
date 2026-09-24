@@ -64,7 +64,7 @@ actual class AnalysisHistoryRepository(private val context: Context) {
     }
 
     actual suspend fun getHistory(limit: Int): List<AnalysisHistoryEntry> =
-        withContext(Dispatchers.IO) { readAll().take(limit) }
+        withContext(Dispatchers.IO) { readAll().take(com.myapplication.common.safeHistoryLimit(limit)) }
 
     actual suspend fun getEntry(id: String): AnalysisHistoryEntry? =
         withContext(Dispatchers.IO) { readAll().find { it.id == id } }

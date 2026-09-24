@@ -438,7 +438,7 @@ class ApiClient(
                     header(HEADER_NONCE, nonceHex)
                     accept(ContentType.parse(SECURE_V2))
                     accept(ContentType.Application.Json)
-                    timeout { requestTimeoutMillis = settings.apiTimeout }
+                    timeout { requestTimeoutMillis = settings.effectiveTimeoutMs }
                     // No query string: the route in the envelope AAD is the bare
                     // path (SPEC §2), and the server reads no /analyze query params.
                     setBody(envelopePart(sealed.envelope))
