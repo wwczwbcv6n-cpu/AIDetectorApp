@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import com.myapplication.common.data.AnalysisHistoryEntry
 import com.myapplication.common.data.ApiError
 import com.myapplication.common.data.ApiException
+import com.myapplication.common.data.MixSummary
 import com.myapplication.common.data.Verdict
 
 /**
@@ -23,7 +24,6 @@ data class FailureOutcome(val state: AnalysisUIState?, val errorMessage: String)
 fun notAnalyzedState(reason: String, processingTimeMs: Long = 0L): AnalysisUIState =
     AnalysisUIState(
         verdict = Verdict.NOT_ANALYZED,
-        confidence = 0f,
         processingTimeMs = processingTimeMs,
         detailNote = reason,
     )
@@ -63,10 +63,18 @@ fun AnalysisHistoryEntry.toUiState(heatmap: ImageBitmap? = null): AnalysisUIStat
             processingTimeMs,
         )
     }
+    // `confidence` on rows written before audit APP-02 holds the raw p_ai,
+    // so it is never shown; only `confidencePct` (the server's 0..100) is.
     return AnalysisUIState(
         verdict = band,
-        confidence = confidence,
+        label = label,
+        confidencePct = confidencePct,
+        mix = mixAiShare?.let { MixSummary(aiShare = it) },
         processingTimeMs = processingTimeMs,
         heatmapImage = heatmap,
     )
 }
+
+/** Headline of a verdict the phone decided itself (a metadata generation confession). */
+const val LOCAL_PROVENANCE_LABEL: String =
+    "AI-generated — the file's own metadata declares an AI generator"

@@ -51,6 +51,52 @@ data class ApiLocalizedEdit(
     @SerialName("thr") val thr: Double? = null,
 )
 
+/** One model's read inside [ApiMix] (`reads`: ai / real / unclear / flag / clear / ...). */
+@Serializable
+data class ApiMixSignal(
+    @SerialName("name") val name: String? = null,
+    @SerialName("reads") val reads: String? = null,
+    @SerialName("in_share") val inShare: Boolean? = null,
+)
+
+/**
+ * `POST /analyze` -> `mix` (2026-09-20, demo_api._mix_block): present on an
+ * `uncertain` verdict that measured something, with label "Mixed signals".
+ * `ai_share` / `real_share` place each model's read on ITS OWN calibrated
+ * band; they are not a probability. Other keys (`parts`, `kind`, per-signal
+ * `p_ai` / `band` / `pos`) are ignored by the app.
+ */
+@Serializable
+data class ApiMix(
+    @SerialName("ai_share") val aiShare: Double? = null,
+    @SerialName("real_share") val realShare: Double? = null,
+    @SerialName("advisory") val advisory: Boolean? = null,
+    @SerialName("basis") val basis: String? = null,
+    @SerialName("signals") val signals: List<ApiMixSignal>? = null,
+) {
+    /** The display summary, or null when the block carries no share. */
+    fun toSummary(): MixSummary? {
+        val share = aiShare?.takeIf { it.isFinite() }?.toFloat()?.coerceIn(0f, 1f) ?: return null
+        return MixSummary(
+            aiShare = share,
+            advisory = advisory == true,
+            basis = basis,
+            signals = signals.orEmpty().mapNotNull { sg ->
+                val n = sg.name?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                n to (sg.reads ?: "unclear")
+            },
+        )
+    }
+}
+
+/** What the result card shows of a `mix` block (also rebuilt from history). */
+data class MixSummary(
+    val aiShare: Float,
+    val advisory: Boolean = false,
+    val basis: String? = null,
+    val signals: List<Pair<String, String>> = emptyList(),
+)
+
 /**
  * Wire DTO for the served `POST /analyze` JSON response (`demo_api.py`, the
  * Tayanch API). The key set is pinned by the parent repo's
@@ -83,6 +129,7 @@ data class ApiLocalizedEdit(
  *   localized_edit       Object?  [ApiLocalizedEdit] — only when the edit screen ran
  *   provenance_kind      String?  "c2pa_manifest" | "metadata_tag" — provenance path only
  *   provenance_verified  Boolean? false: the marker was detected, no signature was validated
+ *   mix                  Object?  [ApiMix] — uncertain verdicts that measured something ("Mixed signals")
  *   error                String?  the graceful error body ("no_file")
  *
  * Every field is nullable with a default so an optional-key or partial body
@@ -121,6 +168,7 @@ data class ApiAnalysisResult(
     @SerialName("localized_edit") val localizedEdit: ApiLocalizedEdit? = null,
     @SerialName("provenance_kind") val provenanceKind: String? = null,
     @SerialName("provenance_verified") val provenanceVerified: Boolean? = null,
+    @SerialName("mix") val mix: ApiMix? = null,
     @SerialName("error") val error: String? = null,
 ) {
     /**
@@ -148,7 +196,11 @@ data class ApiAnalysisResult(
         }
 
     /**
-     * 0..1 P(AI) for the confidence bar: `ai_probability` (alias of `p_ai`).
+     * 0..1 P(AI): `ai_probability` (alias of `p_ai`). NEVER DISPLAYED: the
+     * served head's uncertain band is 0.20 <= p_ai < 0.99, so showing it read
+     * as an accusation on Uncertain cards (audit 2026-09-24 APP-02). The card
+     * shows [label], `confidence` on ai/real and the [mix] shares instead
+     * (ui/ResultPresentation.kt). Kept for the legacy history field only.
      * `confidence` is deliberately NOT a fallback — it is a 0..100 percent on
      * the site's scale and, for a "real" verdict, confidence in REAL; clamping
      * it into 0..1 would paint every real photo as 100% AI.

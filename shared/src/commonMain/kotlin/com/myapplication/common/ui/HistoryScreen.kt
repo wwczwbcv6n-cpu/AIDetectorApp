@@ -1,6 +1,5 @@
 package com.myapplication.common.ui
 
-import com.myapplication.common.data.Verdict
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -196,14 +195,14 @@ fun HistoryEntryCard(
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    if (entry.verdictBand != Verdict.NOT_ANALYZED) {
-                        Text(
-                            text = "Confidence: ${(entry.confidence * 100).toInt()}%",
-                            fontSize = 11.sp
-                        )
-                    } else {
-                        Text(text = entry.statusText, fontSize = 11.sp)
-                    }
+                    // The server's label + "N% confident" (ai/real only); never
+                    // the stored raw p_ai (audit 2026-09-24 APP-02).
+                    val p = entry.presentation()
+                    Text(
+                        text = listOfNotNull(p.headline, p.confidenceLine ?: p.mixLine)
+                            .joinToString(" · "),
+                        fontSize = 11.sp
+                    )
                     Text(
                         text = "${entry.processingTimeMs}ms",
                         fontSize = 11.sp,

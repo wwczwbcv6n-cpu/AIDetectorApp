@@ -1,6 +1,5 @@
 package com.myapplication.common.ui
 
-import com.myapplication.common.data.Verdict
 import com.myapplication.common.formatTo
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
@@ -140,7 +139,7 @@ fun AnalysisScreen(viewModel: AppViewModel) {
                 ) {
                     // Three-band verdict header — honest copy, explicit
                     // "uncertain" band, never a bare binary "FAKE" stamp.
-                    VerdictStatusHeader(result.verdict, result.confidence)
+                    VerdictStatusHeader(presentResult(result.verdict, result.label, result.confidencePct?.toDouble(), result.mix))
 
                     // Qualifier from the pipeline: server degradation abstain
                     // ("share the original file"), provenance match, or cache.
@@ -153,21 +152,6 @@ fun AnalysisScreen(viewModel: AppViewModel) {
                     }
 
                     Divider()
-
-                    // AI-generated probability bar, coloured by the verdict band.
-                    // None when the server was not reached: nothing was measured.
-                    if (result.verdict != Verdict.NOT_ANALYZED) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("AI-generated probability", style = MaterialTheme.typography.caption)
-                            LinearProgressIndicator(
-                                progress = result.confidence,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(8.dp),
-                                color = result.verdict.visuals().accent
-                            )
-                        }
-                    }
 
                     // Processing Time
                     Text(

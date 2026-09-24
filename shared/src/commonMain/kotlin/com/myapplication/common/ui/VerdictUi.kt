@@ -1,5 +1,6 @@
 package com.myapplication.common.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
@@ -87,39 +88,42 @@ fun VerdictBadge(verdict: Verdict, size: Int = 48) {
 }
 
 /**
- * The canonical result header: badge + honest title + calibrated
- * AI-generated probability + a one-line explanation. Shared by the live
- * analysis screen, the history detail screen, and the share-sheet result so
- * all three read identically.
- *
- * @param aiProbability calibrated P(AI-generated) in 0..1.
+ * The canonical result header: badge + the server's label + "N% confident"
+ * (ai/real only) or the mixed-signals shares (uncertain), then a one-line
+ * explanation. Shared by the live analysis screen, the history detail screen
+ * and the share-sheet result so all three read identically. It renders only
+ * what [presentResult] decided — never the raw p_ai (audit 2026-09-24 APP-02).
  */
 @Composable
-fun VerdictStatusHeader(verdict: Verdict, aiProbability: Float) {
-    val v = verdict.visuals()
+fun VerdictStatusHeader(p: ResultPresentation) {
+    val v = p.verdict.visuals()
+    val muted = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            VerdictBadge(verdict)
+            VerdictBadge(p.verdict)
             Column {
-                Text(text = v.title, style = MaterialTheme.typography.h6, color = v.accent)
-                // No number when nothing was measured.
-                if (verdict != Verdict.NOT_ANALYZED) {
-                    Text(
-                        text = "AI-generated probability: ${(aiProbability * 100).toInt()}%",
-                        style = MaterialTheme.typography.body2,
-                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f),
-                    )
+                Text(text = p.headline, style = MaterialTheme.typography.h6, color = v.accent)
+                p.confidenceLine?.let {
+                    Text(text = it, style = MaterialTheme.typography.body2, color = muted)
                 }
             }
         }
-        Text(
-            text = v.description,
-            style = MaterialTheme.typography.body2,
-            color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f),
-        )
+        p.mixLine?.let { line ->
+            Text(text = line, style = MaterialTheme.typography.body2, color = v.accent)
+            p.mixAiShare?.let { share ->
+                Row(Modifier.fillMaxWidth().height(8.dp)) {
+                    if (share > 0f) Box(Modifier.weight(share).fillMaxHeight().background(Color(0xFFC62828)))
+                    if (share < 1f) Box(Modifier.weight(1f - share).fillMaxHeight().background(Color(0xFF2E7D32)))
+                }
+            }
+        }
+        Text(text = p.description, style = MaterialTheme.typography.body2, color = muted)
+        p.signalLines.forEach { line ->
+            Text(text = line, style = MaterialTheme.typography.caption, color = muted)
+        }
     }
 }

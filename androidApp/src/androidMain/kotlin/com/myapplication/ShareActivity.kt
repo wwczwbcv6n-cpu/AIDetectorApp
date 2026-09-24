@@ -21,7 +21,9 @@ import com.myapplication.common.data.ApiError
 import com.myapplication.common.data.ApiException
 import com.myapplication.common.data.AppSettings
 import com.myapplication.common.data.SettingsRepository
+import com.myapplication.common.LOCAL_PROVENANCE_LABEL
 import com.myapplication.common.ui.VerdictStatusHeader
+import com.myapplication.common.ui.presentResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -117,9 +119,9 @@ class ShareActivity : ComponentActivity() {
                         if (meta?.generatorMatch != null) {
                             Result.success(
                                 ApiAnalysisResult(
-                                    aiProbability = 0.95,
                                     conclusion = "AI-Generated",
                                     verdict = "ai",
+                                    label = LOCAL_PROVENANCE_LABEL,
                                     detail = "AI generator signature in metadata: ${meta.generatorMatch}",
                                     method = "provenance",
                                 )
@@ -181,7 +183,10 @@ class ShareActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxWidth().padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                VerdictStatusHeader(verdict, analysisResult.uiConfidence)
+                // The server's label, "N% confident" on ai/real, the mix shares on
+                // uncertain — never the raw p_ai (audit 2026-09-24 APP-02).
+                VerdictStatusHeader(presentResult(verdict, analysisResult.label,
+                    analysisResult.confidence, analysisResult.mix?.toSummary()))
                 analysisResult.detail?.let { note ->
                     Text(
                         text = note,

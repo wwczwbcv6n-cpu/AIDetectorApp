@@ -9,6 +9,7 @@ import com.myapplication.common.data.AnalysisHistoryRepository
 import com.myapplication.common.data.ApiClient
 import com.myapplication.common.data.ApiException
 import com.myapplication.common.data.AppSettings
+import com.myapplication.common.data.MixSummary
 import com.myapplication.common.data.SettingsRepository
 import com.myapplication.common.data.Verdict
 import com.myapplication.common.nowMillis
@@ -22,7 +23,13 @@ import kotlinx.coroutines.withContext
 
 data class AnalysisUIState(
     val verdict: Verdict = Verdict.AUTHENTIC,
-    val confidence: Float = 0f,
+    // What the card shows (ui/ResultPresentation.kt, mirroring site/demo.js
+    // showResult): the server's `label` as the headline, its `confidence`
+    // (0..100) only on ai/real, the `mix` shares on uncertain. The raw p_ai
+    // is never held here, so it cannot be displayed (audit 2026-09-24 APP-02).
+    val label: String? = null,
+    val confidencePct: Float? = null,
+    val mix: MixSummary? = null,
     val processingTimeMs: Long = 0L,
     val processedImage: ImageBitmap? = null,
     val heatmapImage: ImageBitmap? = null,
@@ -145,11 +152,8 @@ class AppViewModel(
                 //    the pre-PROV-7 substring scan wrote accused real photos.
                 val cached = cachedVerdict(historyRepository.getHistory(500), hash)
                 if (cached != null) {
-                    analysisResult = AnalysisUIState(
-                        verdict = cached.verdictBand,
-                        confidence = cached.confidence,
+                    analysisResult = cached.toUiState(sessionHeatmaps[cached.id]).copy(
                         processingTimeMs = nowMillis() - startTime,
-                        heatmapImage = sessionHeatmaps[cached.id],
                         detailNote = "Cached result — identical image analyzed ${cached.formattedTime}."
                     )
                     return@launch
@@ -173,7 +177,7 @@ class AppViewModel(
                     val processingTime = nowMillis() - startTime
                     analysisResult = AnalysisUIState(
                         verdict = Verdict.AI,
-                        confidence = 0.95f,
+                        label = LOCAL_PROVENANCE_LABEL,
                         processingTimeMs = processingTime,
                         detailNote = "AI generator signature in metadata: ${meta.generatorMatch}"
                     )
@@ -186,7 +190,8 @@ class AppViewModel(
                             analysisMode = "PROVENANCE",
                             processingTimeMs = processingTime,
                             verdict = Verdict.AI.name,
-                            sha256 = hash
+                            sha256 = hash,
+                            label = LOCAL_PROVENANCE_LABEL,
                         )
                     )
                     loadHistory()
@@ -224,7 +229,10 @@ class AppViewModel(
                             analysisMode = settings.analysisMode.name,
                             processingTimeMs = processingTime,
                             verdict = verdict.name,
-                            sha256 = hash
+                            sha256 = hash,
+                            label = result.label,
+                            confidencePct = result.confidence?.toFloat(),
+                            mixAiShare = result.mix?.toSummary()?.aiShare,
                         )
                         // Heat map: /analyze never inlines one (the old inline
                         // base64 field was never served). It is a
@@ -236,7 +244,9 @@ class AppViewModel(
                         // TODO(app): wire that call; until then no map is shown.
                         analysisResult = AnalysisUIState(
                             verdict = verdict,
-                            confidence = result.uiConfidence,
+                            label = result.label,
+                            confidencePct = result.confidence?.toFloat(),
+                            mix = result.mix?.toSummary(),
                             processingTimeMs = processingTime,
                             heatmapImage = null,
                             // Surface the server's qualifier (degradation

@@ -22,6 +22,8 @@ data class AnalysisHistoryEntry(
     val fileName: String,
     val fileSize: Long, // bytes
     val isAI: Boolean,
+    // LEGACY: the raw p_ai (0..1). Never displayed — on an Uncertain row it
+    // read "Confidence: 97%" (audit 2026-09-24 APP-02). See [confidencePct].
     val confidence: Float,
     val analysisMode: String,
     val processingTimeMs: Long,
@@ -32,7 +34,13 @@ data class AnalysisHistoryEntry(
     val verdict: String? = null,
     // SHA-256 of the exact analyzed bytes — the verdict-cache key (research
     // §10: byte hash primary, never a perceptual hash). Null on old entries.
-    val sha256: String? = null
+    val sha256: String? = null,
+    // The server's `label` (the card headline), its `confidence` 0..100 (shown
+    // only on ai/real) and the `mix` ai_share of an uncertain verdict. Null on
+    // rows written before audit APP-02: those show the band title, no number.
+    val label: String? = null,
+    val confidencePct: Float? = null,
+    val mixAiShare: Float? = null,
 ) {
     /**
      * The three-band [Verdict], preferring the persisted name over [isAI].

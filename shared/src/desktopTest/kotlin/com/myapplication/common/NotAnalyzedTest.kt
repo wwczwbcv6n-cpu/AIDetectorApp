@@ -36,7 +36,8 @@ class NotAnalyzedTest {
         val state = assertNotNull(outcome.state, "an unreachable server must still show a result card")
         assertEquals(Verdict.NOT_ANALYZED, state.verdict)
         assertNotEquals(Verdict.AUTHENTIC, state.verdict)
-        assertEquals(0f, state.confidence)
+        assertNull(state.confidencePct)
+        assertNull(state.mix)
         assertTrue(outcome.errorMessage.isNotBlank())
         assertTrue("estimate" !in outcome.errorMessage.lowercase(),
             "no on-device estimate is offered any more: ${outcome.errorMessage}")
@@ -95,7 +96,7 @@ class NotAnalyzedTest {
         assertEquals("Not analyzed", localRow.statusText)
         val state = localRow.toUiState()
         assertEquals(Verdict.NOT_ANALYZED, state.verdict)
-        assertEquals(0f, state.confidence)
+        assertNull(state.confidencePct)
     }
 
     @Test

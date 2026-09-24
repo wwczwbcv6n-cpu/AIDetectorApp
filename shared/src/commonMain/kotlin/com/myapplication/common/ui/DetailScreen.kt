@@ -1,6 +1,5 @@
 package com.myapplication.common.ui
 
-import com.myapplication.common.data.Verdict
 import com.myapplication.common.formatTo
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -71,7 +70,7 @@ fun DetailScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     // Three-band verdict header (matches the live analysis screen).
-                    VerdictStatusHeader(result.verdict, result.confidence)
+                    VerdictStatusHeader(presentResult(result.verdict, result.label, result.confidencePct?.toDouble(), result.mix))
                     result.detailNote?.let { note ->
                         Text(
                             note,
@@ -88,20 +87,6 @@ fun DetailScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                         MetadataRow("Mode:", entry.analysisMode)
                         MetadataRow("Processing Time:", "${entry.processingTimeMs}ms")
                         MetadataRow("File Size:", entry.formattedSize)
-                    }
-
-                    // AI-generated probability bar, coloured by the verdict band.
-                    // None for a row that was never analyzed.
-                    if (result.verdict != Verdict.NOT_ANALYZED) {
-                        Divider()
-                        Text("AI-generated probability", style = MaterialTheme.typography.caption)
-                        LinearProgressIndicator(
-                            progress = result.confidence,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp),
-                            color = result.verdict.visuals().accent
-                        )
                     }
                 }
             }
